@@ -1,8 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
+import { useOptionalWorkspace } from '@/components/auth/WorkspaceProvider';
 import { PasswordInput } from '@/components/auth/PasswordInput';
 import { PasswordRulesList } from '@/components/auth/PasswordRulesList';
 import { LegalDisclaimer } from '@/components/LegalDisclaimer';
@@ -14,6 +16,7 @@ import { changePasswordSchema, updateProfileSchema } from '@/lib/validations/aut
 export default function ProfilePage() {
   const router = useRouter();
   const auth = useAuth();
+  const workspace = useOptionalWorkspace();
 
   const [name, setName] = useState('');
   const [profileMessage, setProfileMessage] = useState<string | null>(null);
@@ -339,10 +342,44 @@ export default function ProfilePage() {
           )}
         </section>
 
-        {/* F2 Boundary Callout */}
-        <section className="rounded-2xl border border-dashed border-surface-300 bg-surface-100/60 p-5 text-sm text-surface-600 dark:border-surface-700 dark:bg-surface-900/40 dark:text-surface-400">
-          Workspaces, team invitations, and tenant RBAC roles (`owner`, `analyst`, `viewer`) will be
-          introduced in <strong>F2</strong>.
+        {/* Workspaces & Tenant Access */}
+        <section className="rounded-2xl border border-surface-200 bg-white p-6 shadow-sm dark:border-surface-800 dark:bg-surface-900">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-lg font-semibold text-surface-900 dark:text-surface-50">
+                Workspaces &amp; Tenant RBAC
+              </h2>
+              {workspace?.activeWorkspace ? (
+                <p className="text-sm text-surface-600 dark:text-surface-300">
+                  Active workspace: <strong>{workspace.activeWorkspace.name}</strong> (
+                  <span className="uppercase">{workspace.activeWorkspace.role}</span>) •{' '}
+                  {workspace.workspaces.length}{' '}
+                  {workspace.workspaces.length === 1 ? 'workspace' : 'workspaces'}
+                </p>
+              ) : (
+                <p className="text-sm text-surface-600 dark:text-surface-400">
+                  Manage multi-tenant workspaces, invitations, and RBAC roles (`owner`, `analyst`,
+                  `viewer`).
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {workspace?.activeWorkspace ? (
+                <Link
+                  href={`/workspaces/${workspace.activeWorkspace.id}`}
+                  className="inline-flex min-h-[40px] items-center rounded-lg border border-surface-300 px-3.5 py-2 text-xs font-semibold text-surface-700 hover:bg-surface-100 dark:border-surface-700 dark:text-surface-200 dark:hover:bg-surface-800"
+                >
+                  Open active workspace
+                </Link>
+              ) : null}
+              <Link
+                href="/workspaces"
+                className="inline-flex min-h-[40px] items-center rounded-lg bg-primary-600 px-4 py-2 text-xs font-semibold text-white hover:bg-primary-700"
+              >
+                Manage workspaces
+              </Link>
+            </div>
+          </div>
         </section>
 
         <LegalDisclaimer />

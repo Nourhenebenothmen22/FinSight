@@ -1,5 +1,5 @@
 """API routes package."""
 
-from app.api.routes import auth, health
+from app.api.routes import auth, health, orgs
 
-__all__ = ["auth", "health"]
+__all__ = ["auth", "health", "orgs"]

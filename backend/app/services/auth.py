@@ -41,6 +41,7 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.services.email import build_action_url
+from app.services.tenant import create_personal_organization_for_user
 
 logger = structlog.get_logger(__name__)
 
@@ -253,6 +254,8 @@ async def register_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email already exists",
         ) from None
+
+    await create_personal_organization_for_user(db, user)
 
     raw_token = await _create_auth_token(
         db=db,
@@ -851,6 +854,7 @@ async def _resolve_google_user(
             )
             db.add(user)
             await db.flush()
+            await create_personal_organization_for_user(db, user)
 
     if not user.is_active:
         return None, "account_inactive"

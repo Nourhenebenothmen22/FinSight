@@ -80,6 +80,7 @@ class Settings(BaseSettings):
 
     EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+    ORG_INVITATION_EXPIRE_DAYS: int = 7
 
     AUTH_COOKIE_NAME: str = "finsight_refresh_token"
     AUTH_COOKIE_PATH: str = "/api"
@@ -98,6 +99,7 @@ class Settings(BaseSettings):
     AUTH_RATE_LIMIT_RESET: int = 5
     AUTH_RATE_LIMIT_VERIFY: int = 10
     AUTH_RATE_LIMIT_REFRESH: int = 30
+    AUTH_RATE_LIMIT_ORG_INVITE: int = 20
 
     # -------------------------------------------------------------------------
     # Database - PostgreSQL
@@ -110,6 +112,10 @@ class Settings(BaseSettings):
     POSTGRES_SSL_MODE: str = Field(
         default="disable",
         pattern="^(disable|allow|prefer|require|verify-ca|verify-full)$",
+    )
+    POSTGRES_RLS_ROLE: str = Field(
+        default="finsight_app",
+        pattern="^[a-z_][a-z0-9_]*$",
     )
 
     @computed_field  # type: ignore[prop-decorator]
@@ -271,6 +277,7 @@ class Settings(BaseSettings):
     SMTP_TIMEOUT_SECONDS: int = 10
     EMAIL_VERIFICATION_BASE_URL: str = "http://localhost:3000/verify-email"
     PASSWORD_RESET_BASE_URL: str = "http://localhost:3000/reset-password"
+    INVITATION_ACCEPT_BASE_URL: str = "http://localhost:3000/invitations/accept"
 
     # -------------------------------------------------------------------------
     # Google OAuth

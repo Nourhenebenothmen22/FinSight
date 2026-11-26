@@ -1,10 +1,13 @@
 """Database configuration: SQLAlchemy async engine, session management."""
 
+import re
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -17,6 +20,7 @@ from app.models.base import Base
 
 __all__ = [
     "Base",
+    "bind_tenant_rls",
     "close_db",
     "get_db",
     "get_engine",
@@ -24,6 +28,8 @@ __all__ = [
     "get_session_factory",
     "init_db",
 ]
+
+_VALID_PG_ROLE_RE = re.compile(r"^[a-z_][a-z0-9_]*$")
 
 
 @dataclass
@@ -85,6 +91,27 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency for database session."""
     async with get_session() as session:
         yield session
+
+
+async def bind_tenant_rls(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    rls_role: str = "finsight_app",
+) -> None:
+    """Bind transaction-local tenant_id and non-superuser RLS role in PostgreSQL."""
+    if not _VALID_PG_ROLE_RE.fullmatch(rls_role):
+        raise ValueError("Invalid PostgreSQL RLS role identifier")
+
+    bind = session.get_bind()
+    if bind.dialect.name != "postgresql":
+        return
+
+    # Both SET LOCAL ROLE and is_local=true revert automatically at transaction end
+    await session.execute(text(f"SET LOCAL ROLE {rls_role}"))
+    await session.execute(
+        text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+        {"tenant_id": str(tenant_id)},
+    )
 
 
 async def init_db() -> None:

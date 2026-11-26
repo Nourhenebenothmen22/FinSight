@@ -23,6 +23,7 @@ async function proxyRequest(
     'origin',
     'referer',
     'user-agent',
+    'x-tenant-id',
   ]) {
     const value = request.headers.get(headerName);
     if (value) {

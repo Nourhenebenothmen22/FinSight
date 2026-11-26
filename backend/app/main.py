@@ -8,11 +8,12 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, health
+from app.api.routes import auth, health, orgs
 from app.core.config import get_settings
 from app.core.database import close_db
 from app.core.queue import close_arq_pool
 from app.core.redis import close_redis
+from app.core.tenant_context import TenantContextMiddleware
 
 settings = get_settings()
 
@@ -50,8 +51,9 @@ app = FastAPI(
 )
 
 # -----------------------------------------------------------------------------
-# CORS Middleware
+# CORS & Tenant Context Middleware
 # -----------------------------------------------------------------------------
+app.add_middleware(TenantContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -84,6 +86,8 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 # -----------------------------------------------------------------------------
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(orgs.orgs_router)
+app.include_router(orgs.invitations_router)
 
 
 # -----------------------------------------------------------------------------

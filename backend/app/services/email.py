@@ -195,3 +195,38 @@ def render_password_reset_email(user_name: str, reset_url: str) -> tuple[str, st
         "</body></html>"
     )
     return subject, text_body, html_body
+
+
+def render_org_invitation_email(
+    inviter_name: str,
+    org_name: str,
+    role: str,
+    accept_url: str,
+) -> tuple[str, str, str]:
+    """Return (subject, text_body, html_body) for workspace membership invitation."""
+    safe_inviter = html.escape(inviter_name)
+    safe_org = html.escape(org_name)
+    safe_role = html.escape(role)
+    safe_url = html.escape(accept_url, quote=True)
+    subject = f"Invitation to join {org_name} on FinSight"
+    text_body = (
+        f"Hello,\n\n"
+        f"{inviter_name} invited you to join the workspace '{org_name}' on FinSight "
+        f"as '{role}'.\n\n"
+        "Accept this invitation by opening the link below:\n"
+        f"{accept_url}\n\n"
+        "If you did not expect this invitation, you can ignore this email.\n\n"
+        "FinSight provides financial analysis assistance only and is not investment advice."
+    )
+    html_body = (
+        "<!DOCTYPE html><html><body>"
+        "<p>Hello,</p>"
+        f"<p><strong>{safe_inviter}</strong> invited you to join the workspace "
+        f"<strong>{safe_org}</strong> on FinSight with role <strong>{safe_role}</strong>.</p>"
+        f'<p><a href="{safe_url}">Accept invitation</a></p>'
+        "<p>If you did not expect this invitation, you can safely ignore this message.</p>"
+        "<hr><p><small>FinSight provides financial analysis assistance only "
+        "and is not investment advice.</small></p>"
+        "</body></html>"
+    )
+    return subject, text_body, html_body

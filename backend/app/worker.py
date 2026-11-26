@@ -8,6 +8,7 @@ from app.core.config import get_settings
 from app.core.queue import build_arq_redis_settings
 from app.services.email import (
     get_email_sender,
+    render_org_invitation_email,
     render_password_reset_email,
     render_verification_email,
 )
@@ -57,6 +58,27 @@ async def send_password_reset_email_task(
     )
 
 
+async def send_org_invitation_email_task(
+    ctx: dict[str, Any],
+    invitation: dict[str, str],
+) -> None:
+    """Send workspace invitation email via configured EmailSender."""
+    _ = ctx
+    subject, text_body, html_body = render_org_invitation_email(
+        invitation["inviter_name"],
+        invitation["org_name"],
+        invitation["role"],
+        invitation["accept_url"],
+    )
+    sender = get_email_sender()
+    await sender.send_email(
+        to_email=invitation["to_email"],
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
+
+
 async def on_startup(ctx: dict[str, Any]) -> None:
     """Worker startup lifecycle hook."""
     settings = get_settings()
@@ -73,7 +95,12 @@ async def on_shutdown(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """ARQ worker configuration."""
 
-    functions = [ping, send_verification_email_task, send_password_reset_email_task]
+    functions = [
+        ping,
+        send_verification_email_task,
+        send_password_reset_email_task,
+        send_org_invitation_email_task,
+    ]
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = build_arq_redis_settings()

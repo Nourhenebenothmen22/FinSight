@@ -137,7 +137,7 @@ describe('F1 Auth Pages', () => {
     });
   });
 
-  it('ProfilePage displays account info, sessions, F2 boundary notice, and handles revoke', async () => {
+  it('ProfilePage displays account info, sessions, workspace summary, and handles revoke', async () => {
     vi.spyOn(authApi, 'refresh').mockResolvedValue(mockTokens);
     const sessions: SessionInfo[] = [
       {
@@ -165,7 +165,10 @@ describe('F1 Auth Pages', () => {
     expect(screen.getByText('alice@example.com')).toBeInTheDocument();
     expect(screen.getByText('Verified email')).toBeInTheDocument();
     expect(screen.getByText(/Mozilla\/5\.0 Test/)).toBeInTheDocument();
-    expect(screen.getByText(/introduced in/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Manage workspaces/i })).toHaveAttribute(
+      'href',
+      '/workspaces'
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Revoke' }));
     await waitFor(() => {
