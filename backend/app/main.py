@@ -8,9 +8,11 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import health
+from app.api.routes import auth, health
 from app.core.config import get_settings
-from app.core.database import close_db, init_db
+from app.core.database import close_db
+from app.core.queue import close_arq_pool
+from app.core.redis import close_redis
 
 settings = get_settings()
 
@@ -30,10 +32,10 @@ logger = structlog.get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan manager."""
-    if settings.is_development:
-        await init_db()
+    """Application lifespan manager (schema managed via Alembic migrations)."""
     yield
+    await close_arq_pool()
+    await close_redis()
     await close_db()
 
 
@@ -81,6 +83,7 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
 # Routers
 # -----------------------------------------------------------------------------
 app.include_router(health.router)
+app.include_router(auth.router)
 
 
 # -----------------------------------------------------------------------------

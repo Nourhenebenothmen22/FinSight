@@ -209,39 +209,44 @@ services:
 - Production/staging validator rejecting weak or `CHANGE_ME` secrets
 - `APP_ENV` values: `development` | `test` | `staging` | `production`
 
-### Security (`core/security.py`)
+### Security (`core/security.py`, `core/rate_limit.py`, `api/deps.py`)
 
-- **Argon2id** via `argon2.PasswordHasher` (`time_cost=3`, `memory_cost=65536`, `parallelism=4`, `hash_len=32`, `salt_len=16`)
-- **JWT** via `python-jose` (HS256, access + refresh tokens)
+- **Argon2id** via `argon2.PasswordHasher` (`time_cost=3`, `memory_cost=65536`, `parallelism=4`, `hash_len=32`, `salt_len=16`) + constant-time dummy verification on unknown/OAuth-only logins
+- **JWT + Rotating Refresh Tokens**: Short-lived access JWTs (`jti`, `sub`, `type="access"`) + SHA-256 persisted `RefreshToken` rows (`family_id`) with automatic reuse detection and `HttpOnly` cookie / CSRF origin checks
+- **Opaque Action Tokens**: Single-use SHA-256 hashed `AuthToken` records for email verification and password reset, dispatched asynchronously via ARQ (`worker.py`) + `services/email.py`
+- **Google OAuth 2.0 / OIDC**: Authorization Code + `S256` PKCE + Redis single-use `state` binding + Google JWKS signature verification + pre-hijacking prevention on unverified emails
+- **Rate Limiting**: Atomic Redis Lua window counters in `core/rate_limit.py` with trusted-proxy IP resolution
 
-### Database (`core/database.py` & `models/base.py`)
+### Database (`core/database.py` & `models/`)
 
 - Single unified `Base(DeclarativeBase)` defined in `app/models/base.py` and re-exported by `app/core/database.py`
+- F1 tables (`models/auth.py`): `users`, `refresh_tokens`, `auth_tokens`
 - Async SQLAlchemy 2.0 + `asyncpg` with `connect_args={"ssl": ...}` when `POSTGRES_SSL_MODE != "disable"`
-- `close_db()` disposes the engine and resets the session factory cleanly
+- `close_db()`, `close_redis()`, and `close_arq_pool()` dispose clients cleanly on shutdown
 
-### Health Endpoints (`api/routes/health.py`)
+### Endpoints (`api/routes/`)
 
-| Endpoint | Purpose | Status Codes & Checks |
+| Endpoint Group | Purpose | Notes |
 |---|---|---|
-| `GET /health` | Full dependency health | `200` if all healthy, `503` otherwise (`database`, `redis`, `qdrant`, `storage`) |
-| `GET /health/ready` | Readiness probe | Same as `/health` (`200` / `503`) |
-| `GET /health/live` | Liveness probe | `200` (`{"status": "alive"}`) |
+| `GET /health`, `/health/ready`, `/health/live` | Dependency health & probes | `200` if all healthy (`database`, `redis`, `qdrant`, `storage`), `503` otherwise |
+| `/api/v1/auth/*` | Registration, verification, login, refresh, logout, forgot/reset, profile, sessions, Google OAuth | Versioned REST routes with rate limiting and `HttpOnly` refresh cookies |
 
 ### Alembic Migrations
 
 - `alembic.ini` + `alembic/env.py` (async online/offline runner, `%`-escaped URL, `app.models.base.Base.metadata`)
 - `alembic/versions/0001_f0_baseline.py` baseline revision
+- `alembic/versions/0002_f1_auth_tables.py` F1 `users`, `refresh_tokens`, and `auth_tokens` schema + partial OAuth unique index
 
 ---
 
 ## Frontend Architecture
 
 - **Next.js 14.2 App Router** with `output: 'standalone'`
-- **Runtime Backend Proxy**: `/api/backend/[...path]` App Router route handler forwards requests dynamically at runtime using `BACKEND_INTERNAL_URL || NEXT_PUBLIC_API_URL || 'http://localhost:8000'`
+- **Runtime Backend Proxy**: `/api/backend/[...path]` App Router route handler forwards requests dynamically at runtime (including `cookie`, `set-cookie`, `origin`, and `x-forwarded-for`) using `BACKEND_INTERNAL_URL || NEXT_PUBLIC_API_URL || 'http://localhost:8000'`
+- **Auth State & Client (`AuthProvider.tsx`, `lib/api.ts`, `lib/auth.ts`)**: Holds access token strictly in React memory with single-flight `401` silent refresh lock via `HttpOnly` cookie; Zod validation (`lib/validations/auth.ts`) across `/register`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/auth/google/callback`, and `/profile`
 - **Health visualization**: `HealthStatus.tsx` with `role="status"` accessibility badge + per-dependency breakdown
-- **Compliance**: Mandatory non-investment-advice legal disclaimer displayed in `page.tsx`
-- **Tests**: Vitest + React Testing Library (`tests/health.test.tsx`), type-checked via `tsconfig.json`
+- **Compliance**: Shared `LegalDisclaimer.tsx` rendered across home and auth/profile views
+- **Tests**: Vitest + React Testing Library (`tests/`), type-checked via `tsconfig.json`
 
 ---
 

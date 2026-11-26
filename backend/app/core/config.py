@@ -6,7 +6,7 @@ Required variables will raise ValidationError if missing.
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BeforeValidator,
@@ -77,6 +77,27 @@ class Settings(BaseSettings):
     ARGON2_TIME_COST: int = 3
     ARGON2_MEMORY_COST: int = 65536
     ARGON2_PARALLELISM: int = 4
+
+    EMAIL_VERIFICATION_EXPIRE_HOURS: int = 24
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+
+    AUTH_COOKIE_NAME: str = "finsight_refresh_token"
+    AUTH_COOKIE_PATH: str = "/api"
+    AUTH_COOKIE_SECURE: bool | None = None
+    AUTH_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
+
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_FAIL_CLOSED: bool = False
+    TRUSTED_PROXY_CIDRS: Annotated[list[str], BeforeValidator(parse_cors)] = Field(
+        default=["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+    )
+    AUTH_RATE_LIMIT_LOGIN_IP: int = 10
+    AUTH_RATE_LIMIT_LOGIN_EMAIL: int = 5
+    AUTH_RATE_LIMIT_REGISTER: int = 5
+    AUTH_RATE_LIMIT_FORGOT: int = 3
+    AUTH_RATE_LIMIT_RESET: int = 5
+    AUTH_RATE_LIMIT_VERIFY: int = 10
+    AUTH_RATE_LIMIT_REFRESH: int = 30
 
     # -------------------------------------------------------------------------
     # Database - PostgreSQL
@@ -245,6 +266,9 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: SecretStr = SecretStr("")
     SMTP_FROM: str = "noreply@finsight.local"
+    SMTP_USE_STARTTLS: bool = True
+    SMTP_USE_SSL: bool = False
+    SMTP_TIMEOUT_SECONDS: int = 10
     EMAIL_VERIFICATION_BASE_URL: str = "http://localhost:3000/verify-email"
     PASSWORD_RESET_BASE_URL: str = "http://localhost:3000/reset-password"
 
@@ -254,6 +278,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: SecretStr = SecretStr("")
     GOOGLE_REDIRECT_URI: str = "http://localhost:8000/api/v1/auth/google/callback"
+    GOOGLE_OAUTH_TIMEOUT_SECONDS: int = 10
 
     # -------------------------------------------------------------------------
     # Demo Request
@@ -270,6 +295,13 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         """Reject weak or placeholder secrets in staging/production."""
+        has_google_id = bool(self.GOOGLE_CLIENT_ID.strip())
+        has_google_secret = bool(self.GOOGLE_CLIENT_SECRET.get_secret_value().strip())
+        if has_google_id != has_google_secret:
+            raise ValueError(
+                "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must both be set or both empty"
+            )
+
         if self.APP_ENV in ("staging", "production"):
             secret = self.SECRET_KEY.get_secret_value()
             if len(secret) < MIN_SECRET_KEY_LENGTH or secret.startswith(("CHANGE_ME", "dev-")):
@@ -278,7 +310,23 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "ADMIN_PASSWORD must not use placeholder value in staging/production"
                 )
+            if not self.FRONTEND_URL.startswith("https://"):
+                raise ValueError("FRONTEND_URL must use https:// in staging/production")
         return self
+
+    @property
+    def auth_cookie_secure(self) -> bool:
+        """Return whether auth cookies must have the Secure flag set."""
+        if self.AUTH_COOKIE_SECURE is not None:
+            return self.AUTH_COOKIE_SECURE
+        return self.APP_ENV in ("staging", "production")
+
+    @property
+    def google_oauth_enabled(self) -> bool:
+        """Return True when both Google OAuth credentials are configured."""
+        return bool(
+            self.GOOGLE_CLIENT_ID.strip() and self.GOOGLE_CLIENT_SECRET.get_secret_value().strip()
+        )
 
     # -------------------------------------------------------------------------
     # Validation helpers

@@ -15,10 +15,10 @@ from alembic import context
 # Add backend to path for imports
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+# Import all models here to ensure they're registered with Base.metadata
+import app.models  # noqa: F401
 from app.core.config import get_settings
 from app.models.base import Base
-
-# Import all models here to ensure they're registered with Base.metadata
 
 config = context.config
 
