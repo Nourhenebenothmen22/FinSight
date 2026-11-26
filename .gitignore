@@ -1,0 +1,81 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# Environment files (local overrides)
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Coverage
+.coverage
+htmlcov/
+.coverage.*
+coverage.xml
+.nyc_output/
+
+# Pytest
+.pytest_cache/
+.hypothesis/
+
+# Docker
+docker-compose.override.yml
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# MinIO data (local)
+minio_data/
+
+# Postgres data (local)
+postgres_data/
+
+# Redis data (local)
+redis_data/
+
+# Qdrant data (local)
+qdrant_data/
+
+# Node modules
+node_modules/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Misc
+*.pem
+.vercel
+.netlify

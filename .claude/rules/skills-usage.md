@@ -1,0 +1,90 @@
+# Mandatory Skill Usage Rules
+
+## 1. Skill Discovery
+
+Before starting any development task:
+
+- Inspect the available Skills in `~/.claude/skills/`.
+- Inspect project Skills in `.claude/skills/`, if present.
+- Identify all Skills relevant to the requested task.
+- Read the complete `SKILL.md` of each relevant Skill before implementation.
+- Do not assume a Skill's workflow without reading its instructions.
+
+## 2. Available Global Skills
+
+The following Skills are installed globally:
+
+- code-architecture
+- code-audit
+- code-simplifier
+- debugging
+- documentation
+- git-workflow
+- performance-audit
+- production-readiness
+- security-audit
+- testing
+
+Use them according to the task:
+
+| Task | Relevant Skills |
+|---|---|
+| Architecture and project structure | code-architecture |
+| Code quality and review | code-audit |
+| Refactoring and simplification | code-simplifier |
+| Troubleshooting | debugging |
+| Technical documentation | documentation |
+| Branches, commits and PRs | git-workflow |
+| Performance optimization | performance-audit |
+| Production readiness | production-readiness |
+| Authentication, authorization and security | security-audit |
+| Unit, integration and acceptance tests | testing |
+
+These are recommendations, not an exhaustive mapping. Use additional relevant Skills if discovered.
+
+## 3. Mandatory Development Workflow
+
+For every FinSight feature:
+
+1. Read the relevant requirements in the project specification.
+2. Inspect the existing codebase and architecture.
+3. Identify and read relevant Skills.
+4. Present the implementation plan.
+5. Wait for approval before implementation.
+6. Implement only the requested feature.
+7. Follow the requirements and applicable Skills.
+8. Run relevant tests and quality checks.
+9. Perform a code and security review where applicable.
+10. Report the results and remaining issues.
+
+## 4. Git Workflow
+
+- Follow the git-workflow Skill.
+- Use one feature branch per feature.
+- Create feature branches from the latest `develop`.
+- Never implement multiple independent features in one branch.
+- Never commit, push, merge or open a PR without my explicit approval.
+- Do not modify unrelated files.
+
+## 5. Quality and Security
+
+- Follow the security-audit Skill for security-sensitive changes.
+- Follow the testing Skill for all feature implementations.
+- Follow the code-architecture Skill when introducing architectural changes.
+- Avoid unnecessary dependencies and duplicated code.
+- Never claim that tests passed unless they were actually executed.
+- Never ignore a relevant Skill without explaining why.
+
+## 6. Final Report
+
+At the end of each feature, report:
+
+- Skills discovered and actually used.
+- Files created or modified.
+- Implementation summary.
+- Tests executed and their results.
+- Security considerations.
+- Deviations from the requirements or Skills.
+- Remaining issues.
+
+Do not proceed to another feature without my approval.

@@ -1,0 +1,27 @@
+# docker-compose.override.yml - Local development overrides
+# Copy to docker-compose.override.yml and customize as needed
+# This file is gitignored
+
+services:
+  # Example: Override ports if conflicts exist
+  # postgres:
+  #   ports:
+  #     - "5433:5432"
+
+  # Example: Enable Ollama profile by default
+  # ollama:
+  #   profiles: []
+
+  # Example: Add debug ports for backend
+  # backend:
+  #   ports:
+  #     - "8000:8000"
+  #     - "5678:5678"  # debugpy
+  #   command: python -m debugpy --listen 0.0.0.0:5678 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Example: Mount additional config files
+  # backend:
+  #   volumes:
+  #     - ./backend:/app
+  #     - /app/__pycache__
+  #     - ./config:/app/config:ro

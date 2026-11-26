@@ -1,0 +1,9 @@
+{
+  "name": "FinSight",
+  "short_name": "FinSight",
+  "description": "AI-powered financial analysis with source-backed citations",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0284c7"
+}
