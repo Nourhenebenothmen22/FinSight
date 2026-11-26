@@ -68,11 +68,11 @@ FinSight is a **multi-tenant SaaS platform** for financial analysis. Users uploa
 
 ```
 FinSight/
-├── .agents/skills.json         # Antigravity bridge to ~/.claude/skills
-├── .claude/rules/              # Claude engineering workflow rules
+├── .agents/                    # Antigravity rules and project skills
+│   ├── rules/skills-usage.md
+│   └── skills/
 ├── .github/workflows/          # CI/CD pipelines
-├── AGENTS.md                   # Antigravity project rules
-├── CLAUDE.md                   # Claude Code project rules
+├── AGENTS.md                   # Project rules and technical guidelines
 ├── backend/                    # FastAPI + ARQ worker application
 │   ├── app/
 │   │   ├── api/                # API routes (REST + SSE)

@@ -182,13 +182,13 @@ See [`.env.example`](./.env.example) for the complete list.
 
 ```
 FinSight/
-├── .agents/skills.json               # Antigravity bridge to global skills
-├── .claude/rules/skills-usage.md     # Engineering workflow rules
+├── .agents/
+│   ├── rules/skills-usage.md         # Antigravity workflow rules
+│   └── skills/                       # Project skills (code-audit, testing, security-audit, ...)
 ├── .github/workflows/ci.yml          # CI pipeline
 ├── .gitignore
 ├── .env.example
-├── AGENTS.md                         # Antigravity project instructions
-├── CLAUDE.md                         # Claude Code project instructions
+├── AGENTS.md                         # Project instructions & architecture rules
 ├── docker-compose.yml                # Local stack (api, worker, frontend, postgres, redis, qdrant, garage)
 ├── docker-compose.override.yml.example
 ├── README.md

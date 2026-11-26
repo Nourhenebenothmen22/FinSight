@@ -1,44 +1,48 @@
+---
+trigger: always_on
+---
+
 # Mandatory Skill Usage Rules
 
 ## 1. Skill Discovery
 
 Before starting any development task:
 
-- Inspect the available Skills in `~/.claude/skills/`.
-- Inspect project Skills in `.claude/skills/`, if present.
+- Inspect project Skills in `.agents/skills/`.
+- Inspect global Skills in `~/.gemini/config/skills/`.
 - Identify all Skills relevant to the requested task.
 - Read the complete `SKILL.md` of each relevant Skill before implementation.
 - Do not assume a Skill's workflow without reading its instructions.
 
-## 2. Available Global Skills
+## 2. Available Project & Global Skills
 
-The following Skills are installed globally:
+The following Skills are installed:
 
-- code-architecture
-- code-audit
-- code-simplifier
-- debugging
-- documentation
-- git-workflow
-- performance-audit
-- production-readiness
-- security-audit
-- testing
+- `code-architecture`
+- `code-audit`
+- `code-simplifier`
+- `debugging`
+- `documentation`
+- `git-workflow`
+- `performance-audit`
+- `production-readiness`
+- `security-audit`
+- `testing`
 
 Use them according to the task:
 
 | Task | Relevant Skills |
 |---|---|
-| Architecture and project structure | code-architecture |
-| Code quality and review | code-audit |
-| Refactoring and simplification | code-simplifier |
-| Troubleshooting | debugging |
-| Technical documentation | documentation |
-| Branches, commits and PRs | git-workflow |
-| Performance optimization | performance-audit |
-| Production readiness | production-readiness |
-| Authentication, authorization and security | security-audit |
-| Unit, integration and acceptance tests | testing |
+| Architecture and project structure | `code-architecture` |
+| Code quality and review | `code-audit` |
+| Refactoring and simplification | `code-simplifier` |
+| Troubleshooting | `debugging` |
+| Technical documentation | `documentation` |
+| Branches, commits and PRs | `git-workflow` |
+| Performance optimization | `performance-audit` |
+| Production readiness | `production-readiness` |
+| Authentication, authorization and security | `security-audit` |
+| Unit, integration and acceptance tests | `testing` |
 
 These are recommendations, not an exhaustive mapping. Use additional relevant Skills if discovered.
 
@@ -59,18 +63,18 @@ For every FinSight feature:
 
 ## 4. Git Workflow
 
-- Follow the git-workflow Skill.
+- Follow the `git-workflow` Skill.
 - Use one feature branch per feature.
 - Create feature branches from the latest `develop`.
 - Never implement multiple independent features in one branch.
-- Never commit, push, merge or open a PR without my explicit approval.
+- Never commit, push, merge or open a PR without explicit user approval.
 - Do not modify unrelated files.
 
 ## 5. Quality and Security
 
-- Follow the security-audit Skill for security-sensitive changes.
-- Follow the testing Skill for all feature implementations.
-- Follow the code-architecture Skill when introducing architectural changes.
+- Follow the `security-audit` Skill for security-sensitive changes.
+- Follow the `testing` Skill for all feature implementations.
+- Follow the `code-architecture` Skill when introducing architectural changes.
 - Avoid unnecessary dependencies and duplicated code.
 - Never claim that tests passed unless they were actually executed.
 - Never ignore a relevant Skill without explaining why.
@@ -87,4 +91,4 @@ At the end of each feature, report:
 - Deviations from the requirements or Skills.
 - Remaining issues.
 
-Do not proceed to another feature without my approval.
+Do not proceed to another feature without explicit user approval.
