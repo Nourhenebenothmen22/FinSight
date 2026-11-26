@@ -210,37 +210,46 @@ FinSight/
 │   │   ├── script.py.mako
 │   │   └── versions/
 │   │       ├── 0001_f0_baseline.py
-│   │       └── 0002_f1_auth_tables.py
+│   │       ├── 0002_f1_auth_tables.py
+│   │       └── 0003_f2_tenants_rbac_and_rls.py
 │   ├── app/
-│   │   ├── main.py                   # FastAPI entry point
-│   │   ├── worker.py                 # ARQ worker (ping + auth email tasks)
+│   │   ├── main.py                   # FastAPI entry point + TenantContextMiddleware
+│   │   ├── worker.py                 # ARQ worker (ping + auth/invitation email tasks)
 │   │   ├── core/
 │   │   │   ├── config.py             # Pydantic Settings
 │   │   │   ├── security.py           # Argon2id, JWT, opaque tokens, OIDC JWKS
-│   │   │   ├── database.py           # SQLAlchemy async engine & sessions
+│   │   │   ├── database.py           # SQLAlchemy async engine, sessions & bind_tenant_rls
 │   │   │   ├── redis.py              # Shared async Redis client
 │   │   │   ├── queue.py              # ARQ task dispatcher
-│   │   │   └── rate_limit.py         # Atomic Redis sliding/fixed-window rate limiter
+│   │   │   ├── rate_limit.py         # Atomic Redis sliding/fixed-window rate limiter
+│   │   │   └── tenant_context.py     # Pure ASGI TenantContextMiddleware & X-Tenant-ID binding
 │   │   ├── api/
-│   │   │   ├── deps.py               # Auth user & CSRF origin dependencies
+│   │   │   ├── deps.py               # Auth, CSRF, TenantContext, get_tenant_db, require_org_roles
 │   │   │   └── routes/
 │   │   │       ├── auth.py           # /api/v1/auth/* (register, login, refresh, verify, forgot, reset, google, me, sessions)
+│   │   │       ├── orgs.py           # /api/v1/orgs/* & /api/v1/invitations/accept (workspaces, RBAC, invitations, audit logs)
 │   │   │       └── health.py         # GET /health, /health/ready, /health/live
 │   │   ├── models/
 │   │   │   ├── base.py               # Base, UUIDMixin, TimestampMixin
-│   │   │   └── auth.py               # User, RefreshToken, AuthToken
+│   │   │   ├── auth.py               # User, RefreshToken, AuthToken
+│   │   │   └── tenant.py             # OrgRole, Organization, Membership, OrganizationInvitation, AuditLog
 │   │   ├── schemas/
 │   │   │   ├── auth.py               # Auth request/response models
+│   │   │   ├── tenant.py             # Tenant, RBAC, invitation & audit log schemas
 │   │   │   └── health.py             # HealthResponse, HealthStatus
 │   │   └── services/
-│   │       ├── auth.py               # Registration, login, token rotation, reset, OAuth
+│   │       ├── auth.py               # Registration, login, token rotation, reset, OAuth (+ personal org provisioning)
+│   │       ├── audit.py              # Tenant audit logging helper
+│   │       ├── tenant.py             # Workspace CRUD, RBAC enforcement, invitations & audit queries
 │   │       └── email.py              # SMTP / dev logging email sender
 │   └── tests/
 │       ├── conftest.py
 │       ├── test_auth_endpoints.py
 │       ├── test_auth_security.py
 │       ├── test_core.py
-│       └── test_health.py
+│       ├── test_health.py
+│       ├── test_tenant_rls_postgres.py
+│       └── test_tenants_rbac.py
 ├── frontend/
 │   ├── package.json
 │   ├── tsconfig.json
@@ -258,29 +267,34 @@ FinSight/
 │   │   │   ├── api/backend/[...path]/route.ts
 │   │   │   ├── auth/google/callback/page.tsx
 │   │   │   ├── forgot-password/page.tsx
+│   │   │   ├── invitations/accept/page.tsx
 │   │   │   ├── login/page.tsx
 │   │   │   ├── profile/page.tsx
 │   │   │   ├── register/page.tsx
 │   │   │   ├── reset-password/page.tsx
 │   │   │   ├── verify-email/page.tsx
+│   │   │   ├── workspaces/page.tsx
+│   │   │   ├── workspaces/[orgId]/page.tsx
 │   │   │   ├── layout.tsx
 │   │   │   ├── page.tsx
 │   │   │   └── globals.css
 │   │   ├── components/
-│   │   │   ├── auth/                 # AuthProvider, AuthCard, GoogleOAuthButton, PasswordInput, PasswordRulesList
+│   │   │   ├── auth/                 # AuthProvider, WorkspaceProvider, AuthCard, GoogleOAuthButton, PasswordInput, PasswordRulesList
 │   │   │   ├── HealthStatus.tsx
 │   │   │   ├── LegalDisclaimer.tsx
 │   │   │   └── Navbar.tsx
 │   │   └── lib/
 │   │       ├── api.ts
 │   │       ├── auth.ts
-│   │       └── validations/auth.ts
+│   │       ├── orgs.ts
+│   │       └── validations/          # auth.ts, orgs.ts
 │   └── tests/
 │       ├── setup.ts
 │       ├── auth-pages.test.tsx
 │       ├── auth-validation.test.ts
 │       ├── health.test.tsx
-│       └── proxy.test.ts
+│       ├── proxy.test.ts
+│       └── workspaces.test.tsx
 └── infra/
     ├── postgres/init.sql
     ├── qdrant/config.yaml
@@ -298,8 +312,8 @@ FinSight/
 |---|---|---|
 | **F0** | Foundation: monorepo, Docker (api, worker, frontend, Postgres, Redis, Qdrant, Garage), Alembic, health checks | ✅ **Ready** |
 | **F1** | Auth: registration, login, Argon2id, rotating refresh tokens, Google OAuth (PKCE), email verification, password reset, rate limiting | ✅ **Implemented** |
-| F2 | Tenants/RBAC: organizations, memberships, RLS, invitations | 🔄 Next |
-| F3 | Anonymous trial: 1 free analysis, registration gate, account linking | ⏳ |
+| **F2** | Tenants/RBAC: organizations, memberships, PostgreSQL RLS, email invitations, audit logs | ✅ **Implemented** |
+| F3 | Anonymous trial: 1 free analysis, registration gate, account linking | 🔄 Next |
 | F4 | Documents/storage: presigned upload, validation, lifecycle | ⏳ |
 | F5 | Multimodal ingestion: Docling, VLM charts, structured tables, Qdrant | ⏳ |
 | F6 | RAG filings: hybrid dense+BM25, tenant filters, reranker, citations | ⏳ |

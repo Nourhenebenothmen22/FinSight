@@ -78,3 +78,39 @@
 .finsight-input:user-valid {
   border-color: #16a34a;
 }
+
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+:where(a:any-link, button, input, select, textarea, [tabindex='0']):focus-visible {
+  outline: 3px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.finsight-table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(500px, 80dvh);
+  container-type: inline-size;
+}
+
+.finsight-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.finsight-table thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+}

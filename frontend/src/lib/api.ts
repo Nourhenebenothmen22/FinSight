@@ -21,13 +21,19 @@ class ApiError extends Error {
 interface AuthClientHooks {
   getAccessToken: () => string | null;
   refreshAccessToken: () => Promise<string | null>;
+  getActiveTenantId?: () => string | null;
 }
 
 let authHooks: AuthClientHooks | null = null;
+let tenantIdGetter: (() => string | null) | null = null;
 let inflightRefresh: Promise<string | null> | null = null;
 
 export function configureAuthClient(hooks: AuthClientHooks | null): void {
   authHooks = hooks;
+}
+
+export function configureTenantClient(getter: (() => string | null) | null): void {
+  tenantIdGetter = getter;
 }
 
 export function extractApiErrorMessage(
@@ -84,6 +90,13 @@ async function fetchJson<T>(endpoint: string, options: ExtendedRequestInit = {})
     const token = authHooks.getAccessToken();
     if (token) {
       headers.set('Authorization', `Bearer ${token}`);
+    }
+  }
+  const activeTenantGetter = authHooks?.getActiveTenantId ?? tenantIdGetter;
+  if (!skipAuth && !headers.has('X-Tenant-ID') && activeTenantGetter) {
+    const tenantId = activeTenantGetter();
+    if (tenantId) {
+      headers.set('X-Tenant-ID', tenantId);
     }
   }
 

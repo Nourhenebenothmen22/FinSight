@@ -29,6 +29,7 @@ describe('Backend Proxy Route', () => {
         'content-type': 'application/json',
         cookie: 'finsight_refresh_token=old',
         origin: 'http://localhost:3000',
+        'x-tenant-id': '11111111-1111-1111-1111-111111111111',
       },
       body: JSON.stringify({ email: 'a@b.com', password: 'secret' }),
     });
@@ -41,6 +42,7 @@ describe('Backend Proxy Route', () => {
     const forwardedHeaders = init.headers as Headers;
     expect(forwardedHeaders.get('cookie')).toBe('finsight_refresh_token=old');
     expect(forwardedHeaders.get('origin')).toBe('http://localhost:3000');
+    expect(forwardedHeaders.get('x-tenant-id')).toBe('11111111-1111-1111-1111-111111111111');
     expect(response.headers.get('set-cookie')).toContain('finsight_refresh_token=abc');
   });
 

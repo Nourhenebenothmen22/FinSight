@@ -1,8 +1,8 @@
 # FinSight Architecture Documentation
 
-> **Version**: 0.1.0 (F0 Foundation)
+> **Version**: 0.3.0 (F2 Tenants & RBAC)
 > **Last Updated**: 2026-11-26
-> **Status**: Foundation complete — ready for F1 Auth implementation
+> **Status**: F0 Foundation, F1 Auth & F2 Tenants/RBAC/RLS complete — ready for F3 Anonymous Trial
 
 ---
 
@@ -75,14 +75,15 @@ FinSight/
 ├── AGENTS.md                   # Project rules and technical guidelines
 ├── backend/                    # FastAPI + ARQ worker application
 │   ├── app/
-│   │   ├── api/                # API routes (REST + SSE)
-│   │   ├── core/               # Config, security, database
-│   │   ├── models/             # SQLAlchemy ORM models & shared Base
+│   │   ├── api/                # API routes & dependencies (REST, TenantContext, RBAC)
+│   │   ├── core/               # Config, security, database (RLS), middleware, Redis, queue
+│   │   ├── models/             # SQLAlchemy ORM models & shared Base (auth, tenant)
 │   │   ├── schemas/            # Pydantic request/response models
+│   │   ├── services/           # Business services (auth, tenant, audit, email)
 │   │   ├── main.py             # FastAPI entry point
 │   │   └── worker.py           # ARQ background worker entry point
-│   ├── alembic/                # Database migrations (versions/0001_f0_baseline.py)
-│   ├── tests/                  # Pytest suite
+│   ├── alembic/                # Database migrations (0001..0003)
+│   ├── tests/                  # Pytest unit & PostgreSQL RLS integration suite
 │   ├── pyproject.toml          # Python dependencies & tool config
 │   └── Dockerfile              # Multi-stage build (development, production)
 ├── frontend/                   # Next.js application
@@ -217,10 +218,13 @@ services:
 - **Google OAuth 2.0 / OIDC**: Authorization Code + `S256` PKCE + Redis single-use `state` binding + Google JWKS signature verification + pre-hijacking prevention on unverified emails
 - **Rate Limiting**: Atomic Redis Lua window counters in `core/rate_limit.py` with trusted-proxy IP resolution
 
-### Database (`core/database.py` & `models/`)
+### Database & Multi-Tenant RLS (`core/database.py`, `core/tenant_context.py`, `models/`)
 
 - Single unified `Base(DeclarativeBase)` defined in `app/models/base.py` and re-exported by `app/core/database.py`
 - F1 tables (`models/auth.py`): `users`, `refresh_tokens`, `auth_tokens`
+- F2 tables (`models/tenant.py`): `organizations`, `memberships`, `organization_invitations`, `audit_logs`
+- Strict Row-Level Security (`ENABLE` + `FORCE ROW LEVEL SECURITY`) on all F2 tenant tables enforced via non-superuser role `finsight_app` (`NOBYPASSRLS`) and transaction-local `app.current_tenant_id` (`bind_tenant_rls()` invoked by `get_tenant_db()` / `require_org_roles()`)
+- Pure ASGI `TenantContextMiddleware` binds optional validated `X-Tenant-ID` context and request correlation metadata without altering authorization (membership + role are resolved server-side per request)
 - Async SQLAlchemy 2.0 + `asyncpg` with `connect_args={"ssl": ...}` when `POSTGRES_SSL_MODE != "disable"`
 - `close_db()`, `close_redis()`, and `close_arq_pool()` dispose clients cleanly on shutdown
 
@@ -229,21 +233,23 @@ services:
 | Endpoint Group | Purpose | Notes |
 |---|---|---|
 | `GET /health`, `/health/ready`, `/health/live` | Dependency health & probes | `200` if all healthy (`database`, `redis`, `qdrant`, `storage`), `503` otherwise |
-| `/api/v1/auth/*` | Registration, verification, login, refresh, logout, forgot/reset, profile, sessions, Google OAuth | Versioned REST routes with rate limiting and `HttpOnly` refresh cookies |
+| `/api/v1/auth/*` | Registration, verification, login, refresh, logout, forgot/reset, profile, sessions, Google OAuth | Versioned REST routes with rate limiting, `HttpOnly` refresh cookies, and auto personal workspace provisioning |
+| `/api/v1/orgs/*`, `/api/v1/invitations/accept` | Workspaces CRUD, membership RBAC (`owner`/`analyst`/`viewer`), email invitations, audit logs | Server-side membership/role resolution + per-transaction PostgreSQL `SET LOCAL ROLE` + RLS enforcement |
 
 ### Alembic Migrations
 
 - `alembic.ini` + `alembic/env.py` (async online/offline runner, `%`-escaped URL, `app.models.base.Base.metadata`)
 - `alembic/versions/0001_f0_baseline.py` baseline revision
 - `alembic/versions/0002_f1_auth_tables.py` F1 `users`, `refresh_tokens`, and `auth_tokens` schema + partial OAuth unique index
+- `alembic/versions/0003_f2_tenants_rbac_and_rls.py` F2 `organizations`, `memberships`, `organization_invitations`, `audit_logs`, personal workspace backfill, `finsight_app` role, and strict `FORCE ROW LEVEL SECURITY` policies
 
 ---
 
 ## Frontend Architecture
 
 - **Next.js 14.2 App Router** with `output: 'standalone'`
-- **Runtime Backend Proxy**: `/api/backend/[...path]` App Router route handler forwards requests dynamically at runtime (including `cookie`, `set-cookie`, `origin`, and `x-forwarded-for`) using `BACKEND_INTERNAL_URL || NEXT_PUBLIC_API_URL || 'http://localhost:8000'`
-- **Auth State & Client (`AuthProvider.tsx`, `lib/api.ts`, `lib/auth.ts`)**: Holds access token strictly in React memory with single-flight `401` silent refresh lock via `HttpOnly` cookie; Zod validation (`lib/validations/auth.ts`) across `/register`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/auth/google/callback`, and `/profile`
+- **Runtime Backend Proxy**: `/api/backend/[...path]` App Router route handler forwards requests dynamically at runtime (including `cookie`, `set-cookie`, `origin`, `x-tenant-id`, and `x-forwarded-for`) using `BACKEND_INTERNAL_URL || NEXT_PUBLIC_API_URL || 'http://localhost:8000'`
+- **Auth & Workspace State (`AuthProvider.tsx`, `WorkspaceProvider.tsx`, `lib/api.ts`, `lib/auth.ts`, `lib/orgs.ts`)**: Holds access token strictly in React memory with single-flight `401` silent refresh lock via `HttpOnly` cookie, persists active workspace UUID selection with server-side revalidation and automatic `X-Tenant-ID` header injection, and provides Zod-validated UI across `/register`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/auth/google/callback`, `/profile`, `/workspaces`, `/workspaces/[orgId]`, and `/invitations/accept`
 - **Health visualization**: `HealthStatus.tsx` with `role="status"` accessibility badge + per-dependency breakdown
 - **Compliance**: Shared `LegalDisclaimer.tsx` rendered across home and auth/profile views
 - **Tests**: Vitest + React Testing Library (`tests/`), type-checked via `tsconfig.json`
