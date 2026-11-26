@@ -7,6 +7,18 @@ global.fetch = vi.fn();
 // Mock environment variables
 vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:8000');
 
+// Default Next.js App Router navigation mock (overridable per test)
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+    back: vi.fn(),
+  }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/',
+}));
+
 // Suppress console.error in tests (optional)
 const originalError = console.error;
 beforeAll(() => {

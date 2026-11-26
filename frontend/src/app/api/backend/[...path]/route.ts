@@ -16,13 +16,25 @@ async function proxyRequest(
   const targetUrl = `${getBackendBaseUrl()}/${path}${search}`;
 
   const headers = new Headers();
-  const contentType = request.headers.get('content-type');
-  if (contentType) {
-    headers.set('content-type', contentType);
+  for (const headerName of [
+    'content-type',
+    'authorization',
+    'cookie',
+    'origin',
+    'referer',
+    'user-agent',
+  ]) {
+    const value = request.headers.get(headerName);
+    if (value) {
+      headers.set(headerName, value);
+    }
   }
-  const authorization = request.headers.get('authorization');
-  if (authorization) {
-    headers.set('authorization', authorization);
+
+  const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    headers.set('x-forwarded-for', forwardedFor);
+  } else if (request.ip) {
+    headers.set('x-forwarded-for', request.ip);
   }
 
   try {
@@ -32,6 +44,7 @@ async function proxyRequest(
       headers,
       body: hasBody ? await request.arrayBuffer() : undefined,
       cache: 'no-store',
+      redirect: 'manual',
     });
 
     const body = await upstream.arrayBuffer();
@@ -39,6 +52,25 @@ async function proxyRequest(
     const upstreamType = upstream.headers.get('content-type');
     if (upstreamType) {
       responseHeaders.set('content-type', upstreamType);
+    }
+    const location = upstream.headers.get('location');
+    if (location) {
+      responseHeaders.set('location', location);
+    }
+
+    const upstreamWithSetCookie = upstream.headers as Headers & {
+      getSetCookie?: () => string[];
+    };
+    const setCookies = upstreamWithSetCookie.getSetCookie?.() ?? [];
+    if (setCookies.length > 0) {
+      for (const cookieValue of setCookies) {
+        responseHeaders.append('set-cookie', cookieValue);
+      }
+    } else {
+      const singleSetCookie = upstream.headers.get('set-cookie');
+      if (singleSetCookie) {
+        responseHeaders.append('set-cookie', singleSetCookie);
+      }
     }
 
     return new NextResponse(body, {

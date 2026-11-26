@@ -63,11 +63,14 @@ cp .env.example .env
 #   S3_SECRET_KEY=$(openssl rand -hex 32)
 ```
 
-### 2. Start All Services
+### 2. Start All Services & Apply Migrations
 
 ```bash
 # Development (with hot reload)
 docker compose up -d --build
+
+# Apply PostgreSQL migrations
+docker compose exec api alembic upgrade head
 
 # Or with Ollama (local LLM fallback)
 docker compose --profile ollama up -d --build
@@ -168,6 +171,8 @@ npm run start
 | `S3_ACCESS_KEY` | ✅ | Garage S3 access key (`GK` + 24 hex chars) |
 | `S3_SECRET_KEY` | ✅ | Garage S3 secret key (64 hex chars) |
 | `ADMIN_PASSWORD` | ✅ | Initial admin user password |
+| `SMTP_HOST` / `SMTP_FROM` | ❌ | Optional SMTP host for verification/reset emails (logs in dev if unset) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | ❌ | Optional Google OAuth 2.0 credentials (F1+) |
 | `GROQ_API_KEY` | ❌ | Groq API key (F7+) |
 | `GEMINI_API_KEY` | ❌ | Google Gemini API key (F7+) |
 | `OPENROUTER_API_KEY` | ❌ | OpenRouter API key (F7+) |
@@ -203,22 +208,37 @@ FinSight/
 │   ├── alembic/
 │   │   ├── env.py
 │   │   ├── script.py.mako
-│   │   └── versions/0001_f0_baseline.py
+│   │   └── versions/
+│   │       ├── 0001_f0_baseline.py
+│   │       └── 0002_f1_auth_tables.py
 │   ├── app/
 │   │   ├── main.py                   # FastAPI entry point
-│   │   ├── worker.py                 # ARQ worker entry point
+│   │   ├── worker.py                 # ARQ worker (ping + auth email tasks)
 │   │   ├── core/
 │   │   │   ├── config.py             # Pydantic Settings
-│   │   │   ├── security.py           # Argon2id, JWT
-│   │   │   └── database.py           # SQLAlchemy async engine & sessions
-│   │   ├── api/routes/
-│   │   │   └── health.py             # GET /health, /health/ready, /health/live
+│   │   │   ├── security.py           # Argon2id, JWT, opaque tokens, OIDC JWKS
+│   │   │   ├── database.py           # SQLAlchemy async engine & sessions
+│   │   │   ├── redis.py              # Shared async Redis client
+│   │   │   ├── queue.py              # ARQ task dispatcher
+│   │   │   └── rate_limit.py         # Atomic Redis sliding/fixed-window rate limiter
+│   │   ├── api/
+│   │   │   ├── deps.py               # Auth user & CSRF origin dependencies
+│   │   │   └── routes/
+│   │   │       ├── auth.py           # /api/v1/auth/* (register, login, refresh, verify, forgot, reset, google, me, sessions)
+│   │   │       └── health.py         # GET /health, /health/ready, /health/live
 │   │   ├── models/
-│   │   │   └── base.py               # Base, UUIDMixin, TimestampMixin
-│   │   └── schemas/
-│   │       └── health.py             # HealthResponse, HealthStatus
+│   │   │   ├── base.py               # Base, UUIDMixin, TimestampMixin
+│   │   │   └── auth.py               # User, RefreshToken, AuthToken
+│   │   ├── schemas/
+│   │   │   ├── auth.py               # Auth request/response models
+│   │   │   └── health.py             # HealthResponse, HealthStatus
+│   │   └── services/
+│   │       ├── auth.py               # Registration, login, token rotation, reset, OAuth
+│   │       └── email.py              # SMTP / dev logging email sender
 │   └── tests/
 │       ├── conftest.py
+│       ├── test_auth_endpoints.py
+│       ├── test_auth_security.py
 │       ├── test_core.py
 │       └── test_health.py
 ├── frontend/
@@ -236,16 +256,31 @@ FinSight/
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── api/backend/[...path]/route.ts
+│   │   │   ├── auth/google/callback/page.tsx
+│   │   │   ├── forgot-password/page.tsx
+│   │   │   ├── login/page.tsx
+│   │   │   ├── profile/page.tsx
+│   │   │   ├── register/page.tsx
+│   │   │   ├── reset-password/page.tsx
+│   │   │   ├── verify-email/page.tsx
 │   │   │   ├── layout.tsx
 │   │   │   ├── page.tsx
 │   │   │   └── globals.css
 │   │   ├── components/
-│   │   │   └── HealthStatus.tsx
+│   │   │   ├── auth/                 # AuthProvider, AuthCard, GoogleOAuthButton, PasswordInput, PasswordRulesList
+│   │   │   ├── HealthStatus.tsx
+│   │   │   ├── LegalDisclaimer.tsx
+│   │   │   └── Navbar.tsx
 │   │   └── lib/
-│   │       └── api.ts
+│   │       ├── api.ts
+│   │       ├── auth.ts
+│   │       └── validations/auth.ts
 │   └── tests/
 │       ├── setup.ts
-│       └── health.test.tsx
+│       ├── auth-pages.test.tsx
+│       ├── auth-validation.test.ts
+│       ├── health.test.tsx
+│       └── proxy.test.ts
 └── infra/
     ├── postgres/init.sql
     ├── qdrant/config.yaml
@@ -262,8 +297,8 @@ FinSight/
 | Phase | Feature | Status |
 |---|---|---|
 | **F0** | Foundation: monorepo, Docker (api, worker, frontend, Postgres, Redis, Qdrant, Garage), Alembic, health checks | ✅ **Ready** |
-| F1 | Auth: registration, login, Argon2id, JWT, Google OAuth, email verification | 🔄 Next |
-| F2 | Tenants/RBAC: organizations, memberships, RLS, invitations | ⏳ |
+| **F1** | Auth: registration, login, Argon2id, rotating refresh tokens, Google OAuth (PKCE), email verification, password reset, rate limiting | ✅ **Implemented** |
+| F2 | Tenants/RBAC: organizations, memberships, RLS, invitations | 🔄 Next |
 | F3 | Anonymous trial: 1 free analysis, registration gate, account linking | ⏳ |
 | F4 | Documents/storage: presigned upload, validation, lifecycle | ⏳ |
 | F5 | Multimodal ingestion: Docling, VLM charts, structured tables, Qdrant | ⏳ |

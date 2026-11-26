@@ -1,11 +1,16 @@
-"""FinSight ARQ background worker skeleton (F0 foundation)."""
+"""FinSight ARQ background worker tasks and lifecycle."""
 
 from typing import Any
 
 import structlog
-from arq.connections import RedisSettings
 
 from app.core.config import get_settings
+from app.core.queue import build_arq_redis_settings
+from app.services.email import (
+    get_email_sender,
+    render_password_reset_email,
+    render_verification_email,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -14,6 +19,42 @@ async def ping(ctx: dict[str, Any]) -> str:
     """Minimal F0 health/smoke job for the background worker."""
     _ = ctx
     return "pong"
+
+
+async def send_verification_email_task(
+    ctx: dict[str, Any],
+    to_email: str,
+    user_name: str,
+    verification_url: str,
+) -> None:
+    """Send account verification email via configured EmailSender."""
+    _ = ctx
+    subject, text_body, html_body = render_verification_email(user_name, verification_url)
+    sender = get_email_sender()
+    await sender.send_email(
+        to_email=to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
+
+
+async def send_password_reset_email_task(
+    ctx: dict[str, Any],
+    to_email: str,
+    user_name: str,
+    reset_url: str,
+) -> None:
+    """Send password reset email via configured EmailSender."""
+    _ = ctx
+    subject, text_body, html_body = render_password_reset_email(user_name, reset_url)
+    sender = get_email_sender()
+    await sender.send_email(
+        to_email=to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
 
 
 async def on_startup(ctx: dict[str, Any]) -> None:
@@ -29,21 +70,12 @@ async def on_shutdown(ctx: dict[str, Any]) -> None:
     logger.info("worker.shutdown")
 
 
-def get_redis_settings() -> RedisSettings:
-    """Build ARQ RedisSettings from application configuration."""
-    settings = get_settings()
-    return RedisSettings(
-        host=settings.REDIS_HOST,
-        port=settings.REDIS_PORT,
-        password=settings.REDIS_PASSWORD.get_secret_value() or None,
-        database=settings.REDIS_DB,
-    )
-
-
 class WorkerSettings:
     """ARQ worker configuration."""
 
-    functions = [ping]
+    functions = [ping, send_verification_email_task, send_password_reset_email_task]
     on_startup = on_startup
     on_shutdown = on_shutdown
-    redis_settings = get_redis_settings()
+    redis_settings = build_arq_redis_settings()
+    keep_result = 0
+    max_tries = 3

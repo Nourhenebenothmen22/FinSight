@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { HealthStatus } from '@/components/HealthStatus';
+import { LegalDisclaimer } from '@/components/LegalDisclaimer';
+import { Navbar } from '@/components/Navbar';
 import { ApiError, HealthResponse, healthApi } from '@/lib/api';
 
 export default function HomePage() {
@@ -46,6 +48,7 @@ export default function HomePage() {
 
   return (
     <main className="min-h-screen bg-surface-50 dark:bg-surface-950">
+      <Navbar />
       <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
         {/* Hero Section */}
         <section className="mb-16 text-center">
@@ -108,12 +111,7 @@ export default function HomePage() {
         </section>
 
         {/* Mandatory Legal Disclaimer */}
-        <footer className="border-t border-surface-200 pt-6 text-center dark:border-surface-800">
-          <p className="text-xs text-surface-500 dark:text-surface-400">
-            Disclaimer: FinSight provides financial analysis assistance only and is not investment
-            advice. Do not rely on outputs as personalized buy or sell recommendations.
-          </p>
-        </footer>
+        <LegalDisclaimer />
       </div>
     </main>
   );

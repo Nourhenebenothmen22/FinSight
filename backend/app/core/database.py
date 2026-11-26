@@ -92,6 +92,8 @@ async def init_db() -> None:
 
     Note: In production, use Alembic migrations instead.
     """
+    import app.models  # noqa: F401, PLC0415
+
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
