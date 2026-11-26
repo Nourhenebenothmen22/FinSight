@@ -11,11 +11,20 @@ class ApiError extends Error {
   constructor(
     message: string,
     public status: number,
-    public data?: unknown
+    public data?: unknown,
+    public retryAfterSeconds?: number
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+
+function parseRetryAfterSeconds(rawHeader: string | null): number | undefined {
+  if (!rawHeader) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(rawHeader.trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 interface AuthClientHooks {
@@ -41,19 +50,23 @@ export function extractApiErrorMessage(
   fallback = 'An unexpected error occurred.'
 ): string {
   if (err instanceof ApiError) {
+    let baseMessage: string | null = null;
     if (err.data && typeof err.data === 'object' && 'detail' in err.data) {
       const detail = (err.data as { detail?: unknown }).detail;
       if (typeof detail === 'string' && detail.trim()) {
-        return detail;
-      }
-      if (Array.isArray(detail) && detail.length > 0) {
+        baseMessage = detail;
+      } else if (Array.isArray(detail) && detail.length > 0) {
         const first = detail[0];
         if (first && typeof first === 'object' && 'msg' in first && typeof first.msg === 'string') {
-          return first.msg;
+          baseMessage = first.msg;
         }
       }
     }
-    return err.message;
+    if (err.status === 429 && err.retryAfterSeconds !== undefined) {
+      const waitHint = `Please wait ${err.retryAfterSeconds} second${err.retryAfterSeconds === 1 ? '' : 's'} before trying again.`;
+      return baseMessage ? `${baseMessage} ${waitHint}` : waitHint;
+    }
+    return baseMessage ?? err.message;
   }
   if (err instanceof Error && err.message) {
     return err.message;
@@ -138,7 +151,8 @@ async function fetchJson<T>(endpoint: string, options: ExtendedRequestInit = {})
     throw new ApiError(
       `API error: ${response.status} ${response.statusText}`,
       response.status,
-      data
+      data,
+      parseRetryAfterSeconds(response.headers.get('retry-after'))
     );
   }
 

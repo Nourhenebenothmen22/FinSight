@@ -6,14 +6,16 @@ from dataclasses import dataclass
 from typing import Annotated
 from urllib.parse import urlparse
 
+import redis.asyncio as aioredis
 import structlog
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.core.database import bind_tenant_rls, get_db
-from app.core.rate_limit import extract_client_ip
+from app.core.rate_limit import enforce_actor_rate_limit, extract_client_ip
+from app.core.redis import get_redis
 from app.core.security import get_current_user_id
 from app.models.auth import User
 from app.models.tenant import Membership, Organization, OrgRole
@@ -196,5 +198,67 @@ def require_org_roles(
                 detail="Insufficient organization permissions",
             )
         return tenant
+
+    return _dependency
+
+
+def user_rate_limit(
+    scope: str,
+    max_requests: int | Callable[[Settings], int],
+    window_seconds: int,
+) -> Callable[[Response, User, aioredis.Redis, Settings], Awaitable[None]]:
+    """Build a FastAPI dependency applying Token Bucket limits keyed by verified user_id."""
+
+    async def _dependency(
+        response: Response,
+        current_user: Annotated[User, Depends(get_current_user)],
+        redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
+        settings: Annotated[Settings, Depends(get_settings)],
+    ) -> None:
+        limit = max_requests(settings) if callable(max_requests) else max_requests
+        await enforce_actor_rate_limit(
+            response=response,
+            redis_client=redis_client,
+            settings=settings,
+            scope=scope,
+            actor_key=f"user:{current_user.id}",
+            max_requests=limit,
+            window_seconds=window_seconds,
+        )
+
+    return _dependency
+
+
+def org_rate_limit(
+    scope: str,
+    max_requests: int | Callable[[Settings], int],
+    window_seconds: int,
+    *,
+    allowed_roles: tuple[OrgRole, ...] = (),
+) -> Callable[[Response, TenantContext, aioredis.Redis, Settings], Awaitable[None]]:
+    """Enforce RBAC role checks first, then apply Token Bucket keyed by (org_id, user_id)."""
+    allowed = frozenset(allowed_roles)
+
+    async def _dependency(
+        response: Response,
+        tenant: Annotated[TenantContext, Depends(get_tenant_context)],
+        redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
+        settings: Annotated[Settings, Depends(get_settings)],
+    ) -> None:
+        if allowed and tenant.role not in allowed:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient organization permissions",
+            )
+        limit = max_requests(settings) if callable(max_requests) else max_requests
+        await enforce_actor_rate_limit(
+            response=response,
+            redis_client=redis_client,
+            settings=settings,
+            scope=scope,
+            actor_key=f"org:{tenant.tenant_id}:user:{tenant.user.id}",
+            max_requests=limit,
+            window_seconds=window_seconds,
+        )
 
     return _dependency

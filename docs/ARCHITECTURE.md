@@ -207,16 +207,16 @@ services:
 
 - **Pydantic Settings** resolving root `.env` (`Path(__file__).resolve().parents[3] / ".env"`) and local `.env`
 - All sensitive keys/passwords typed as `SecretStr`
-- Production/staging validator rejecting weak or `CHANGE_ME` secrets
+- Production/staging validator rejecting weak or `CHANGE_ME` secrets, non-`strict` rate-limit profiles (`RATE_LIMIT_PROFILE=relaxed_dev` / `RATE_LIMIT_ENABLED=false`), and broad RFC1918/wildcard `TRUSTED_PROXY_CIDRS`
 - `APP_ENV` values: `development` | `test` | `staging` | `production`
 
 ### Security (`core/security.py`, `core/rate_limit.py`, `api/deps.py`)
 
-- **Argon2id** via `argon2.PasswordHasher` (`time_cost=3`, `memory_cost=65536`, `parallelism=4`, `hash_len=32`, `salt_len=16`) + constant-time dummy verification on unknown/OAuth-only logins
+- **Argon2id** via `argon2.PasswordHasher` (`time_cost=3`, `memory_cost=65536`, `parallelism=4`, `hash_len=32`, `salt_len=16`) + constant-time dummy verification on unknown/OAuth-only logins (gated behind login cooldown check)
 - **JWT + Rotating Refresh Tokens**: Short-lived access JWTs (`jti`, `sub`, `type="access"`) + SHA-256 persisted `RefreshToken` rows (`family_id`) with automatic reuse detection and `HttpOnly` cookie / CSRF origin checks
 - **Opaque Action Tokens**: Single-use SHA-256 hashed `AuthToken` records for email verification and password reset, dispatched asynchronously via ARQ (`worker.py`) + `services/email.py`
 - **Google OAuth 2.0 / OIDC**: Authorization Code + `S256` PKCE + Redis single-use `state` binding + Google JWKS signature verification + pre-hijacking prevention on unverified emails
-- **Rate Limiting**: Atomic Redis Lua window counters in `core/rate_limit.py` with trusted-proxy IP resolution
+- **Hybrid Multi-Policy Rate Limiting**: Atomic Redis Lua scripts in `core/rate_limit.py` combining Token Bucket limiting (keyed by verified `user_id`/`org_id` on authenticated routes, composite `(ip, email)` + NAT ceiling on public email flows) and failure-only progressive backoff on `/login` (`5s → 15s → 60s → 300s`, cleared on valid login, distributed `email` anti-stuffing cap `30 / 15m`, evaluated before Argon2id) with trusted-proxy IP resolution and `relaxed_dev` / `strict` environment profiles
 
 ### Database & Multi-Tenant RLS (`core/database.py`, `core/tenant_context.py`, `models/`)
 
@@ -248,7 +248,7 @@ services:
 ## Frontend Architecture
 
 - **Next.js 14.2 App Router** with `output: 'standalone'`
-- **Runtime Backend Proxy**: `/api/backend/[...path]` App Router route handler forwards requests dynamically at runtime (including `cookie`, `set-cookie`, `origin`, `x-tenant-id`, and `x-forwarded-for`) using `BACKEND_INTERNAL_URL || NEXT_PUBLIC_API_URL || 'http://localhost:8000'`
+- **Runtime Backend Proxy**: `/api/backend/[...path]` App Router route handler forwards requests dynamically at runtime (including `cookie`, `set-cookie`, `origin`, `x-tenant-id`, `retry-after`, `x-ratelimit-*`, `x-request-id`, and `x-forwarded-for`) using `BACKEND_INTERNAL_URL || NEXT_PUBLIC_API_URL || 'http://localhost:8000'`
 - **Auth & Workspace State (`AuthProvider.tsx`, `WorkspaceProvider.tsx`, `lib/api.ts`, `lib/auth.ts`, `lib/orgs.ts`)**: Holds access token strictly in React memory with single-flight `401` silent refresh lock via `HttpOnly` cookie, persists active workspace UUID selection with server-side revalidation and automatic `X-Tenant-ID` header injection, and provides Zod-validated UI across `/register`, `/login`, `/verify-email`, `/forgot-password`, `/reset-password`, `/auth/google/callback`, `/profile`, `/workspaces`, `/workspaces/[orgId]`, and `/invitations/accept`
 - **Health visualization**: `HealthStatus.tsx` with `role="status"` accessibility badge + per-dependency breakdown
 - **Compliance**: Shared `LegalDisclaimer.tsx` rendered across home and auth/profile views

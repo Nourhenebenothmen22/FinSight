@@ -50,13 +50,19 @@ async function proxyRequest(
 
     const body = await upstream.arrayBuffer();
     const responseHeaders = new Headers();
-    const upstreamType = upstream.headers.get('content-type');
-    if (upstreamType) {
-      responseHeaders.set('content-type', upstreamType);
-    }
-    const location = upstream.headers.get('location');
-    if (location) {
-      responseHeaders.set('location', location);
+    for (const headerName of [
+      'content-type',
+      'location',
+      'retry-after',
+      'x-ratelimit-limit',
+      'x-ratelimit-remaining',
+      'x-ratelimit-reset',
+      'x-request-id',
+    ]) {
+      const value = upstream.headers.get(headerName);
+      if (value) {
+        responseHeaders.set(headerName, value);
+      }
     }
 
     const upstreamWithSetCookie = upstream.headers as Headers & {

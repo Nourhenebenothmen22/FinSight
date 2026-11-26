@@ -6,11 +6,17 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import TenantContext, get_current_user, get_tenant_db, require_org_roles
+from app.api.deps import (
+    TenantContext,
+    get_current_user,
+    get_tenant_db,
+    org_rate_limit,
+    require_org_roles,
+    user_rate_limit,
+)
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.queue import TaskDispatcher, get_task_dispatcher
-from app.core.rate_limit import rate_limit
 from app.models.auth import User
 from app.models.tenant import OrgRole
 from app.schemas.auth import MessageResponse
@@ -213,10 +219,11 @@ async def get_invitations(
     summary="Invite a colleague by email (owner only)",
     dependencies=[
         Depends(
-            rate_limit(
+            org_rate_limit(
                 "org_invite",
                 max_requests=lambda s: s.AUTH_RATE_LIMIT_ORG_INVITE,
                 window_seconds=_FIFTEEN_MINUTES,
+                allowed_roles=(OrgRole.OWNER,),
             )
         )
     ],
@@ -282,7 +289,7 @@ async def get_audit_logs(
     summary="Accept an organization email invitation",
     dependencies=[
         Depends(
-            rate_limit(
+            user_rate_limit(
                 "org_invite_accept",
                 max_requests=lambda s: s.AUTH_RATE_LIMIT_VERIFY,
                 window_seconds=_FIFTEEN_MINUTES,

@@ -3,6 +3,7 @@
 import { NextRequest } from 'next/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { POST } from '@/app/api/backend/[...path]/route';
+import { api, ApiError, extractApiErrorMessage } from '@/lib/api';
 
 describe('Backend Proxy Route', () => {
   beforeEach(() => {
@@ -56,5 +57,56 @@ describe('Backend Proxy Route', () => {
     const response = await POST(request, { params: { path: ['health'] } });
     expect(response.status).toBe(502);
     expect(await response.json()).toEqual({ detail: 'Backend service unavailable' });
+  });
+
+  it('forwards Retry-After and X-RateLimit-* headers on 429 and surfaces wait time in ApiError', async () => {
+    const upstreamHeaders = new Headers({
+      'content-type': 'application/json',
+      'retry-after': '15',
+      'x-ratelimit-limit': '5',
+      'x-ratelimit-remaining': '0',
+      'x-request-id': 'req-429-test',
+    });
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 429,
+      statusText: 'Too Many Requests',
+      ok: false,
+      headers: upstreamHeaders,
+      json: async () => ({ detail: 'Too many requests. Please try again later.' }),
+      arrayBuffer: async () =>
+        new TextEncoder().encode(
+          JSON.stringify({ detail: 'Too many requests. Please try again later.' })
+        ).buffer,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = new NextRequest('http://localhost:3000/api/backend/api/v1/auth/login', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.com', password: 'wrong' }),
+    });
+
+    const proxied = await POST(request, { params: { path: ['api', 'v1', 'auth', 'login'] } });
+    expect(proxied.status).toBe(429);
+    expect(proxied.headers.get('retry-after')).toBe('15');
+    expect(proxied.headers.get('x-ratelimit-limit')).toBe('5');
+    expect(proxied.headers.get('x-ratelimit-remaining')).toBe('0');
+    expect(proxied.headers.get('x-request-id')).toBe('req-429-test');
+
+    let caught: unknown;
+    try {
+      await api.post(
+        '/api/v1/auth/login',
+        { email: 'a@b.com', password: 'wrong' },
+        { skipAuth: true }
+      );
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(429);
+    expect((caught as ApiError).retryAfterSeconds).toBe(15);
+    expect(extractApiErrorMessage(caught)).toContain('Please wait 15 seconds before trying again.');
   });
 });

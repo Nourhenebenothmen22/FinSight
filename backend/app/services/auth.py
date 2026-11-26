@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings
 from app.core.queue import TaskDispatcher
+from app.core.rate_limit import check_login_cooldown, clear_login_failures, record_login_failure
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -383,8 +384,18 @@ async def login_user(
     *,
     user_agent: str | None = None,
     ip_address: str | None = None,
+    redis_client: aioredis.Redis | None = None,
 ) -> IssuedSession:
-    """Authenticate an email/password user using constant-time verification."""
+    """Authenticate an email/password user with cooldown check before Argon2id."""
+    rate_ip = ip_address or "unknown"
+    if redis_client is not None:
+        await check_login_cooldown(
+            redis_client=redis_client,
+            settings=settings,
+            client_ip=rate_ip,
+            email=payload.email,
+        )
+
     result = await db.execute(select(User).where(User.email == payload.email))
     user = result.scalar_one_or_none()
 
@@ -393,6 +404,13 @@ async def login_user(
         user.password_hash if user is not None else None,
     )
     if user is None or not password_valid:
+        if redis_client is not None:
+            await record_login_failure(
+                redis_client=redis_client,
+                settings=settings,
+                client_ip=rate_ip,
+                email=payload.email,
+            )
         logger.warning("auth.login_failed", email_hash=hash_token(payload.email))
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -421,6 +439,13 @@ async def login_user(
         ip_address=ip_address,
     )
     await db.commit()
+    if redis_client is not None:
+        await clear_login_failures(
+            redis_client=redis_client,
+            settings=settings,
+            client_ip=rate_ip,
+            email=payload.email,
+        )
     logger.info("auth.login_success", user_id=str(user.id))
     return session
 

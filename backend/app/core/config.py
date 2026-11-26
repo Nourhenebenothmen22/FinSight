@@ -4,6 +4,8 @@ All settings are loaded from environment variables with validation at startup.
 Required variables will raise ValidationError if missing.
 """
 
+import ipaddress
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -33,6 +35,41 @@ def parse_cors(v: Any) -> list[str]:
             return []
         return [item.strip() for item in stripped.split(",") if item.strip()]
     raise ValueError(f"Invalid CORS_ORIGINS value: {type(v).__name__}")
+
+
+def parse_int_list(v: Any) -> list[int]:
+    """Parse positive integer sequences from list, JSON array, or comma-separated string."""
+    if isinstance(v, list):
+        values = [int(item) for item in v]
+    elif isinstance(v, str):
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("Backoff step list cannot be empty")
+        if stripped.startswith("[") and stripped.endswith("]"):
+            parsed = json.loads(stripped)
+            if not isinstance(parsed, list):
+                raise ValueError("Invalid JSON list for integer sequence")
+            values = [int(item) for item in parsed]
+        else:
+            values = [int(item.strip()) for item in stripped.split(",") if item.strip()]
+    else:
+        raise TypeError(f"Invalid integer list value: {type(v).__name__}")
+    if not values or any(val <= 0 for val in values):
+        raise ValueError("All backoff steps must be positive integers")
+    return values
+
+
+_IPV4_VERSION = 4
+_IPV6_VERSION = 6
+_MIN_PROD_PROXY_IPV4_PREFIX = 20
+_MIN_PROD_PROXY_IPV6_PREFIX = 48
+_BROAD_PRIVATE_PROXY_NETS = frozenset(
+    {
+        ipaddress.ip_network("10.0.0.0/8"),
+        ipaddress.ip_network("172.16.0.0/12"),
+        ipaddress.ip_network("192.168.0.0/16"),
+    }
+)
 
 
 class Settings(BaseSettings):
@@ -89,11 +126,19 @@ class Settings(BaseSettings):
 
     RATE_LIMIT_ENABLED: bool = True
     RATE_LIMIT_FAIL_CLOSED: bool = False
+    RATE_LIMIT_PROFILE: Literal["auto", "relaxed_dev", "strict"] = "auto"
+    RATE_LIMIT_DEV_BURST: int = Field(default=20, ge=1)
+    RATE_LIMIT_DEV_BACKOFF_SECONDS: int = Field(default=5, ge=1)
     TRUSTED_PROXY_CIDRS: Annotated[list[str], BeforeValidator(parse_cors)] = Field(
         default=["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
     )
     AUTH_RATE_LIMIT_LOGIN_IP: int = 10
     AUTH_RATE_LIMIT_LOGIN_EMAIL: int = 5
+    AUTH_LOGIN_BACKOFF_STEPS: Annotated[list[int], BeforeValidator(parse_int_list)] = Field(
+        default=[5, 15, 60, 300]
+    )
+    AUTH_LOGIN_FAILURE_WINDOW_SECONDS: int = Field(default=900, ge=60)
+    AUTH_LOGIN_DISTRIBUTED_EMAIL_LIMIT: int = Field(default=30, ge=1)
     AUTH_RATE_LIMIT_REGISTER: int = 5
     AUTH_RATE_LIMIT_FORGOT: int = 3
     AUTH_RATE_LIMIT_RESET: int = 5
@@ -319,7 +364,49 @@ class Settings(BaseSettings):
                 )
             if not self.FRONTEND_URL.startswith("https://"):
                 raise ValueError("FRONTEND_URL must use https:// in staging/production")
+            if self.RATE_LIMIT_PROFILE == "relaxed_dev":
+                raise ValueError(
+                    "RATE_LIMIT_PROFILE must be 'strict' (or 'auto') in staging/production"
+                )
+            if not self.RATE_LIMIT_ENABLED:
+                raise ValueError("RATE_LIMIT_ENABLED must be true in staging/production")
+            for cidr in self.TRUSTED_PROXY_CIDRS:
+                try:
+                    net = ipaddress.ip_network(cidr, strict=False)
+                except ValueError as exc:
+                    raise ValueError(f"Invalid CIDR '{cidr}' in TRUSTED_PROXY_CIDRS") from exc
+                is_broad_v4 = (
+                    net.version == _IPV4_VERSION
+                    and net.prefixlen < _MIN_PROD_PROXY_IPV4_PREFIX
+                    and not net.is_loopback
+                )
+                is_broad_v6 = (
+                    net.version == _IPV6_VERSION
+                    and net.prefixlen < _MIN_PROD_PROXY_IPV6_PREFIX
+                    and not net.is_loopback
+                )
+                if (
+                    net.prefixlen == 0
+                    or net in _BROAD_PRIVATE_PROXY_NETS
+                    or is_broad_v4
+                    or is_broad_v6
+                ):
+                    raise ValueError(
+                        "TRUSTED_PROXY_CIDRS must be restricted to explicit reverse-proxy "
+                        "IPs/subnets in staging/production"
+                    )
         return self
+
+    @property
+    def effective_rate_limit_profile(self) -> Literal["relaxed_dev", "strict"]:
+        """Resolve effective rate-limiting profile (always strict in staging/production)."""
+        if self.APP_ENV in ("staging", "production"):
+            return "strict"
+        if self.RATE_LIMIT_PROFILE == "strict":
+            return "strict"
+        if self.RATE_LIMIT_PROFILE == "relaxed_dev":
+            return "relaxed_dev"
+        return "relaxed_dev" if self.APP_ENV == "development" else "strict"
 
     @property
     def auth_cookie_secure(self) -> bool:
