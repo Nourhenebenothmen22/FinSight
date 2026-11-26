@@ -173,6 +173,7 @@ npm run start
 | `ADMIN_PASSWORD` | ✅ | Initial admin user password |
 | `SMTP_HOST` / `SMTP_FROM` | ❌ | Optional SMTP host for verification/reset emails (logs in dev if unset) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | ❌ | Optional Google OAuth 2.0 credentials (F1+) |
+| `RATE_LIMIT_PROFILE` / `TRUSTED_PROXY_CIDRS` | ❌ | `auto` (`relaxed_dev` in dev, forced `strict` in staging/prod; narrow proxy CIDRs required in prod) |
 | `GROQ_API_KEY` | ❌ | Groq API key (F7+) |
 | `GEMINI_API_KEY` | ❌ | Google Gemini API key (F7+) |
 | `OPENROUTER_API_KEY` | ❌ | OpenRouter API key (F7+) |
@@ -221,10 +222,10 @@ FinSight/
 │   │   │   ├── database.py           # SQLAlchemy async engine, sessions & bind_tenant_rls
 │   │   │   ├── redis.py              # Shared async Redis client
 │   │   │   ├── queue.py              # ARQ task dispatcher
-│   │   │   ├── rate_limit.py         # Atomic Redis sliding/fixed-window rate limiter
+│   │   │   ├── rate_limit.py         # Hybrid Token Bucket + progressive login backoff (Redis Lua)
 │   │   │   └── tenant_context.py     # Pure ASGI TenantContextMiddleware & X-Tenant-ID binding
 │   │   ├── api/
-│   │   │   ├── deps.py               # Auth, CSRF, TenantContext, get_tenant_db, require_org_roles
+│   │   │   ├── deps.py               # Auth, CSRF, TenantContext, get_tenant_db, require_org_roles, actor rate limits
 │   │   │   └── routes/
 │   │   │       ├── auth.py           # /api/v1/auth/* (register, login, refresh, verify, forgot, reset, google, me, sessions)
 │   │   │       ├── orgs.py           # /api/v1/orgs/* & /api/v1/invitations/accept (workspaces, RBAC, invitations, audit logs)
@@ -248,6 +249,8 @@ FinSight/
 │       ├── test_auth_security.py
 │       ├── test_core.py
 │       ├── test_health.py
+│       ├── test_rate_limit_redis.py
+│       ├── test_rate_limiting.py
 │       ├── test_tenant_rls_postgres.py
 │       └── test_tenants_rbac.py
 ├── frontend/

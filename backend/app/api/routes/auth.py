@@ -8,7 +8,12 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, Res
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import extract_client_metadata, get_current_user, verify_cookie_csrf_origin
+from app.api.deps import (
+    extract_client_metadata,
+    get_current_user,
+    user_rate_limit,
+    verify_cookie_csrf_origin,
+)
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.queue import TaskDispatcher, get_task_dispatcher
@@ -173,26 +178,17 @@ async def resend_verification(
     response_model=TokenResponse,
     status_code=status.HTTP_200_OK,
     summary="Authenticate with email and password",
-    dependencies=[
-        Depends(
-            rate_limit(
-                "login",
-                max_requests=lambda s: s.AUTH_RATE_LIMIT_LOGIN_IP,
-                window_seconds=_ONE_MINUTE,
-                email_max_requests=lambda s: s.AUTH_RATE_LIMIT_LOGIN_EMAIL,
-                email_window_seconds=_FIFTEEN_MINUTES,
-            )
-        )
-    ],
 )
 async def login(
     request: Request,
     response: Response,
     payload: LoginRequest,
+    *,
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis_client: Annotated[aioredis.Redis, Depends(get_redis)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> TokenResponse:
-    """Sign in with email/password, setting an HttpOnly refresh cookie and returning JWTs."""
+    """Sign in with email/password using failure-only progressive backoff and JWT rotation."""
     user_agent, ip_address = extract_client_metadata(request, settings)
     session = await auth_service.login_user(
         db,
@@ -200,6 +196,7 @@ async def login(
         settings,
         user_agent=user_agent,
         ip_address=ip_address,
+        redis_client=redis_client,
     )
     _set_refresh_cookie(response, session.refresh_token, settings)
     return _to_token_response(session)
@@ -387,7 +384,7 @@ async def update_me(
     summary="Change or set user password",
     dependencies=[
         Depends(
-            rate_limit(
+            user_rate_limit(
                 "change_password",
                 max_requests=lambda s: s.AUTH_RATE_LIMIT_RESET,
                 window_seconds=_FIFTEEN_MINUTES,

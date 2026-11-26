@@ -134,6 +134,7 @@ jobs:
           S3_SECURE: "false"
           ADMIN_PASSWORD: testadminpassword
           FINSIGHT_RUN_PG_INTEGRATION: "1"
+          FINSIGHT_RUN_REDIS_INTEGRATION: "1"
         run: pytest -v --tb=short --cov=app --cov-report=xml
 
       - name: Upload coverage

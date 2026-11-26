@@ -1,5 +1,7 @@
 """Pytest configuration and fixtures for backend tests."""
 
+import math
+import time
 from collections.abc import AsyncGenerator, Generator
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,31 +24,125 @@ from app.models.base import Base
 
 
 class InMemoryRedisStub:
-    """Minimal async Redis stub supporting get, set, delete, and F1 Lua scripts."""
+    """Minimal async Redis stub supporting TTLs, GET/SET/DELETE, and FinSight Lua scripts."""
 
     def __init__(self) -> None:
         self._store: dict[str, str] = {}
+        self._expires_at_ms: dict[str, int] = {}
+
+    def _prune(self, key: str, now_ms: int | None = None) -> None:
+        exp = self._expires_at_ms.get(key)
+        if exp is None:
+            return
+        current_ms = int(time.time() * 1000) if now_ms is None else now_ms
+        if current_ms >= exp:
+            self._store.pop(key, None)
+            self._expires_at_ms.pop(key, None)
 
     async def get(self, key: str) -> str | None:
+        self._prune(key)
         return self._store.get(key)
 
     async def set(self, key: str, value: str, ex: int | None = None) -> bool:
-        _ = ex
         self._store[key] = value
+        if ex is not None:
+            self._expires_at_ms[key] = int(time.time() * 1000) + int(ex) * 1000
+        else:
+            self._expires_at_ms.pop(key, None)
         return True
 
     async def delete(self, key: str) -> int:
+        self._expires_at_ms.pop(key, None)
         return 1 if self._store.pop(key, None) is not None else 0
 
+    def _eval_token_bucket(self, key: str, args: tuple[str, ...]) -> list[int]:
+        capacity = int(args[0])
+        refill_per_sec = float(args[1])
+        now_ms = int(args[2])
+        ttl_ms = int(args[3])
+        self._prune(key, now_ms)
+
+        tokens = float(capacity)
+        last_ms = now_ms
+        raw = self._store.get(key)
+        if raw and ":" in raw:
+            tok_str, ts_str = raw.split(":", maxsplit=1)
+            tokens = float(tok_str)
+            last_ms = int(ts_str)
+
+        elapsed = max(0.0, (now_ms - last_ms) / 1000.0)
+        tokens = min(float(capacity), tokens + elapsed * refill_per_sec)
+        if tokens >= 1.0:
+            tokens -= 1.0
+            self._store[key] = f"{tokens:.9f}:{now_ms}"
+            self._expires_at_ms[key] = now_ms + ttl_ms
+            return [1, math.floor(tokens), 0]
+
+        needed = 1.0 - tokens
+        retry_after = max(1, math.ceil(needed / refill_per_sec))
+        self._store[key] = f"{tokens:.9f}:{now_ms}"
+        self._expires_at_ms[key] = now_ms + ttl_ms
+        return [0, 0, retry_after]
+
+    def _eval_login_cooldown_check(self, keys: tuple[str, ...], args: tuple[str, ...]) -> list[int]:
+        now_ms = int(args[0])
+        max_retry_sec = 0
+        blocking_idx = 0
+        for idx, key in enumerate(keys, start=1):
+            self._prune(key, now_ms)
+            raw = self._store.get(key)
+            if raw and ":" in raw:
+                _, blocked_str = raw.split(":", maxsplit=1)
+                blocked_until = int(blocked_str)
+                if blocked_until > now_ms:
+                    retry_sec = max(1, math.ceil((blocked_until - now_ms) / 1000.0))
+                    if retry_sec > max_retry_sec:
+                        max_retry_sec = retry_sec
+                        blocking_idx = idx
+        return [max_retry_sec, blocking_idx]
+
+    def _eval_login_failure(self, key: str, args: tuple[str, ...]) -> list[int]:
+        free_attempts = int(args[0])
+        window_ms = int(args[1])
+        now_ms = int(args[2])
+        steps = [int(item) for item in args[3:]]
+        self._prune(key, now_ms)
+
+        count = 0
+        blocked_until_ms = 0
+        raw = self._store.get(key)
+        if raw and ":" in raw:
+            count_str, blocked_str = raw.split(":", maxsplit=1)
+            count = int(count_str)
+            blocked_until_ms = int(blocked_str)
+
+        count += 1
+        penalty_sec = 0
+        if count >= free_attempts and steps:
+            step_idx = min(count - free_attempts, len(steps) - 1)
+            penalty_sec = steps[step_idx]
+            blocked_until_ms = max(blocked_until_ms, now_ms + penalty_sec * 1000)
+
+        ttl_ms = max(window_ms, penalty_sec * 1000 + 1000)
+        self._store[key] = f"{count}:{blocked_until_ms}"
+        self._expires_at_ms[key] = now_ms + ttl_ms
+        return [count, blocked_until_ms, penalty_sec]
+
     async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> Any:
-        _ = numkeys
+        keys = keys_and_args[:numkeys]
+        args = keys_and_args[numkeys:]
+
+        if "FINSIGHT_LUA:token_bucket" in script:
+            return self._eval_token_bucket(keys[0], args)
+        if "FINSIGHT_LUA:login_cooldown_check" in script:
+            return self._eval_login_cooldown_check(keys, args)
+        if "FINSIGHT_LUA:login_failure" in script:
+            return self._eval_login_failure(keys[0], args)
+
         key = keys_and_args[0]
-        if "INCR" in script:
-            window = int(keys_and_args[1]) if len(keys_and_args) > 1 else 60
-            current = int(self._store.get(key, "0")) + 1
-            self._store[key] = str(current)
-            return [current, window]
         if "GET" in script and "DEL" in script:
+            self._prune(key)
+            self._expires_at_ms.pop(key, None)
             return self._store.pop(key, None)
         raise NotImplementedError("Unsupported Lua script in InMemoryRedisStub")
 
