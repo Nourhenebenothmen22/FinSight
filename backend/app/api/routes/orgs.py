@@ -58,6 +58,15 @@ async def list_my_organizations(
     response_model=OrganizationSummaryResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a new organization workspace",
+    dependencies=[
+        Depends(
+            user_rate_limit(
+                "org_create",
+                max_requests=lambda s: s.AUTH_RATE_LIMIT_ORG_INVITE,
+                window_seconds=_FIFTEEN_MINUTES,
+            )
+        )
+    ],
 )
 async def create_org(
     payload: CreateOrganizationRequest,

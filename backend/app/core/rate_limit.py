@@ -5,6 +5,7 @@ import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Any, NoReturn
 
 import redis.asyncio as aioredis
@@ -147,22 +148,23 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+@lru_cache(maxsize=16)
 def _parse_networks(
-    cidrs: list[str],
-) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
-    """Parse CIDR strings into ip_network objects, ignoring invalid entries safely."""
+    cidrs: tuple[str, ...],
+) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    """Parse CIDR strings into ip_network objects, caching per CIDR tuple."""
     networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
     for cidr in cidrs:
         try:
             networks.append(ipaddress.ip_network(cidr, strict=False))
         except ValueError:
             logger.warning("rate_limit.invalid_trusted_cidr", cidr=cidr)
-    return networks
+    return tuple(networks)
 
 
 def _is_trusted_ip(
     raw_ip: str,
-    trusted_networks: list[ipaddress.IPv4Network | ipaddress.IPv6Network],
+    trusted_networks: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...],
 ) -> bool:
     """Return True if raw_ip parses as an address inside trusted_networks."""
     try:
@@ -175,7 +177,7 @@ def _is_trusted_ip(
 def extract_client_ip(request: Request, settings: Settings) -> str:
     """Resolve client IP while only trusting X-Forwarded-For from configured proxy hops."""
     peer_ip = request.client.host if request.client else "unknown"
-    trusted_networks = _parse_networks(settings.TRUSTED_PROXY_CIDRS)
+    trusted_networks = _parse_networks(tuple(settings.TRUSTED_PROXY_CIDRS))
 
     if peer_ip != "unknown" and _is_trusted_ip(peer_ip, trusted_networks):
         forwarded_for = request.headers.get("x-forwarded-for", "")

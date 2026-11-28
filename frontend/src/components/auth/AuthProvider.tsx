@@ -37,6 +37,7 @@ export function AuthProvider({ children, skipInitialRefresh = false }: AuthProvi
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(!skipInitialRefresh);
   const accessTokenRef = useRef<string | null>(null);
+  const inflightRefreshRef = useRef<Promise<string | null> | null>(null);
 
   const applySession = useCallback((tokens: TokenResponse) => {
     accessTokenRef.current = tokens.access_token;
@@ -51,14 +52,22 @@ export function AuthProvider({ children, skipInitialRefresh = false }: AuthProvi
   }, []);
 
   const refreshSession = useCallback(async (): Promise<string | null> => {
-    try {
-      const tokens = await authApi.refresh();
-      applySession(tokens);
-      return tokens.access_token;
-    } catch {
-      clearSession();
-      return null;
+    if (!inflightRefreshRef.current) {
+      inflightRefreshRef.current = authApi
+        .refresh()
+        .then((tokens) => {
+          applySession(tokens);
+          return tokens.access_token;
+        })
+        .catch(() => {
+          clearSession();
+          return null;
+        })
+        .finally(() => {
+          inflightRefreshRef.current = null;
+        });
     }
+    return inflightRefreshRef.current;
   }, [applySession, clearSession]);
 
   const refreshUser = useCallback(async (): Promise<AuthUser | null> => {

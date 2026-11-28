@@ -1,5 +1,6 @@
 /** Component and integration tests for F1 auth pages, AuthProvider, and ProfilePage. */
 
+import { StrictMode } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import * as nextNavigation from 'next/navigation';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -214,5 +215,26 @@ describe('F1 Auth Pages', () => {
     expect(r1).toEqual({ ok: true });
     expect(r2).toEqual({ ok: true });
     expect(refreshCalls).toBe(1);
+  });
+
+  it('AuthProvider deduplicates StrictMode double-mount initial refresh calls', async () => {
+    const refreshSpy = vi.spyOn(authApi, 'refresh').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve(mockTokens), 15);
+        })
+    );
+
+    render(
+      <StrictMode>
+        <AuthProvider>
+          <div data-testid="strict-child" />
+        </AuthProvider>
+      </StrictMode>
+    );
+
+    await waitFor(() => {
+      expect(refreshSpy).toHaveBeenCalledTimes(1);
+    });
   });
 });

@@ -109,4 +109,32 @@ describe('Backend Proxy Route', () => {
     expect((caught as ApiError).retryAfterSeconds).toBe(15);
     expect(extractApiErrorMessage(caught)).toContain('Please wait 15 seconds before trying again.');
   });
+
+  it('appends NextRequest.ip to forwarded-for chain and blocks dot-segment traversal', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      arrayBuffer: async () => new TextEncoder().encode('{"ok":true}').buffer,
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const request = new NextRequest('http://localhost:3000/api/backend/health', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '1.2.3.4' },
+    });
+    Object.defineProperty(request, 'ip', { value: '198.51.100.77' });
+
+    const okResponse = await POST(request, { params: { path: ['health'] } });
+    expect(okResponse.status).toBe(200);
+    const forwardedHeaders = fetchMock.mock.calls[0][1].headers as Headers;
+    expect(forwardedHeaders.get('x-forwarded-for')).toBe('1.2.3.4, 198.51.100.77');
+
+    fetchMock.mockClear();
+    const traversalReq = new NextRequest('http://localhost:3000/api/backend/health', {
+      method: 'POST',
+    });
+    const badResponse = await POST(traversalReq, { params: { path: ['api', '..', 'admin'] } });
+    expect(badResponse.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

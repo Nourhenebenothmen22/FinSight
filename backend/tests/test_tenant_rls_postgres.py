@@ -324,6 +324,13 @@ async def test_http_tenant_endpoints_against_real_postgres_rls() -> None:
             )
             assert ok_b_logs.status_code == 200
             assert all(item["org_id"] == str(org_b_id) for item in ok_b_logs.json()["items"])
+
+            # Sole owner leave/demotion executes FOR UPDATE lock under finsight_app RLS cleanly
+            sole_leave = await client.post(
+                f"/api/v1/orgs/{org_a_id}/leave",
+                headers={"Authorization": f"Bearer {token_a}"},
+            )
+            assert sole_leave.status_code == 409
     finally:
         fastapi_app.dependency_overrides.clear()
         async with session_factory() as cleanup:

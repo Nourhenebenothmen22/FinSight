@@ -16,7 +16,7 @@ Upload an annual report (PDF) or enter a stock ticker, ask a natural-language qu
 ├──────────────────┬────────────────────┬─────────────────────────────────────┤
 │    Frontend      │      Backend       │           Infrastructure            │
 │   (Next.js 14)   │    (FastAPI + ARQ) │          (Docker Compose)           │
-│  Port: 3000      │   Port: 8000       │  • PostgreSQL 16  (5432)            │
+│  Port: 3002      │   Port: 8000       │  • PostgreSQL 16  (5432)            │
 │                  │                    │  • Qdrant         (6333/6334)       │
 │  • Tailwind CSS  │  • SQLAlchemy 2.0  │  • Redis 7        (6379)            │
 │  • Recharts      │  • Alembic         │  • Garage v2 S3   (3900 S3 / 3903)  │
