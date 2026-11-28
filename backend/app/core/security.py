@@ -219,6 +219,7 @@ async def verify_google_id_token(
     id_token: str,
     client_id: str,
     timeout_seconds: float = 10.0,
+    access_token: str | None = None,
 ) -> dict[str, Any]:
     """Cryptographically verify a Google OIDC ID token and its claims."""
     try:
@@ -246,6 +247,7 @@ async def verify_google_id_token(
             key,
             algorithms=["RS256"],
             audience=client_id,
+            access_token=access_token,
             options={"require_aud": True, "require_exp": True, "require_sub": True},
         )
     except JWTError as exc:

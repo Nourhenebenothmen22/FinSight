@@ -293,6 +293,44 @@ class TestGoogleIdTokenVerification:
                 await verify_google_id_token(bad_token, client_id="google-client-123")
             assert exc_info.value.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_verify_google_id_token_validates_at_hash_with_access_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _google_jwks_cache.keys = []
+        _google_jwks_cache.fetched_at = 0.0
+
+        google_access_token = "ya29.test-google-access-token"
+        digest = hashlib.sha256(google_access_token.encode("utf-8")).digest()
+        at_hash = base64.urlsafe_b64encode(digest[:16]).rstrip(b"=").decode("ascii")
+
+        jwk_dict, id_token_with_at_hash = _generate_rsa_jwk_and_token(
+            kid="kid-at-hash",
+            claims_override={"at_hash": at_hash},
+        )
+
+        async def fake_fetch_jwks(timeout_seconds: float = 10.0) -> list[dict[str, Any]]:
+            _ = timeout_seconds
+            return [jwk_dict]
+
+        monkeypatch.setattr(security_module, "fetch_google_jwks", fake_fetch_jwks)
+
+        claims = await verify_google_id_token(
+            id_token_with_at_hash,
+            client_id="google-client-123",
+            access_token=google_access_token,
+        )
+        assert claims["sub"] == "google-sub-999"
+
+        for bad_access_token in (None, "ya29.tampered-access-token"):
+            with pytest.raises(HTTPException) as exc_info:
+                await verify_google_id_token(
+                    id_token_with_at_hash,
+                    client_id="google-client-123",
+                    access_token=bad_access_token,
+                )
+            assert exc_info.value.status_code == 401
+
 
 class TestWorkerEmailTasks:
     """Validate ARQ email worker task invocations."""

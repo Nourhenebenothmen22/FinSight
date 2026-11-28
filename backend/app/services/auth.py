@@ -929,10 +929,15 @@ async def complete_google_callback(
         id_token = token_data.get("id_token")
         if not isinstance(id_token, str) or not id_token:
             return f"{frontend_base}/login?oauth_error=oauth_failed"
+        raw_access_token = token_data.get("access_token")
+        google_access_token = (
+            raw_access_token if isinstance(raw_access_token, str) and raw_access_token else None
+        )
         claims = await verify_google_id_token(
             id_token=id_token,
             client_id=settings.GOOGLE_CLIENT_ID,
             timeout_seconds=float(settings.GOOGLE_OAUTH_TIMEOUT_SECONDS),
+            access_token=google_access_token,
         )
     except (httpx.HTTPError, ValueError, HTTPException):
         logger.exception("auth.google_token_exchange_failed")
