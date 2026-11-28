@@ -80,7 +80,7 @@ docker compose --profile ollama up -d --build
 
 | Service | URL | Health Check |
 |---|---|---|
-| Frontend | http://localhost:3000 | Auto-loads health status |
+| Frontend | http://localhost:3002 | Auto-loads health status |
 | Backend API | http://localhost:8000 | `GET /health` (`200` healthy / `503` unhealthy) |
 | API Docs | http://localhost:8000/docs | Swagger UI (dev only) |
 | Garage S3 API | http://localhost:3900 | S3 API (checked via `garage-init` & API `/health`) |

@@ -317,7 +317,7 @@ npm run build
 # Full Stack
 docker compose up -d --build
 curl -f http://localhost:8000/health
-curl -f http://localhost:3000
+curl -f http://localhost:3002
 ```
 
 ---

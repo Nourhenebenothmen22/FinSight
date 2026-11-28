@@ -8,7 +8,7 @@ service:
   max_request_size_mb: 32
   enable_cors: true
   cors_allowed_origins:
-    - "http://localhost:3000"
+    - "http://localhost:3002"
     - "http://localhost:8000"
   api_key: ""  # Disable API key authentication for local development
 
