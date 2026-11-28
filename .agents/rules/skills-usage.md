@@ -23,7 +23,9 @@ The following Skills are installed:
 - `code-simplifier`
 - `debugging`
 - `documentation`
+- `fintech-ui-ux-design`
 - `git-workflow`
+- `nextjs-senior-frontend`
 - `performance-audit`
 - `production-readiness`
 - `security-audit`
@@ -38,7 +40,9 @@ Use them according to the task:
 | Refactoring and simplification | `code-simplifier` |
 | Troubleshooting | `debugging` |
 | Technical documentation | `documentation` |
+| UI/UX design, palette, buttons, charts, branding | `fintech-ui-ux-design` |
 | Branches, commits and PRs | `git-workflow` |
+| Next.js pages, components, SSE, frontend architecture | `nextjs-senior-frontend` |
 | Performance optimization | `performance-audit` |
 | Production readiness | `production-readiness` |
 | Authentication, authorization and security | `security-audit` |
