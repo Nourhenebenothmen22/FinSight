@@ -196,6 +196,8 @@ def test_settings() -> Settings:
         S3_BUCKET_REPORTS="test-reports",
         ADMIN_PASSWORD="testadminpassword",
         RATE_LIMIT_ENABLED=True,
+        FRONTEND_URL="http://localhost:3000",
+        CORS_ORIGINS=["http://localhost:3000"],
     )
 
 
@@ -273,6 +275,8 @@ def test_app(
     monkeypatch.setenv("GOOGLE_CLIENT_ID", "")
     monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "")
     monkeypatch.setenv("SMTP_HOST", "")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
+    monkeypatch.setenv("CORS_ORIGINS", '["http://localhost:3000"]')
     get_settings.cache_clear()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:

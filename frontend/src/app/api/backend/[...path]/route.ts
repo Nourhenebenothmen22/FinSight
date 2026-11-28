@@ -11,6 +11,9 @@ async function proxyRequest(
   request: NextRequest,
   context: { params: { path: string[] } }
 ): Promise<NextResponse> {
+  if (context.params.path.some((segment) => segment === '.' || segment === '..')) {
+    return NextResponse.json({ detail: 'Invalid backend path' }, { status: 400 });
+  }
   const path = context.params.path.join('/');
   const search = request.nextUrl.search;
   const targetUrl = `${getBackendBaseUrl()}/${path}${search}`;
@@ -32,10 +35,17 @@ async function proxyRequest(
   }
 
   const forwardedFor = request.headers.get('x-forwarded-for');
-  if (forwardedFor) {
-    headers.set('x-forwarded-for', forwardedFor);
-  } else if (request.ip) {
-    headers.set('x-forwarded-for', request.ip);
+  const forwardedParts = forwardedFor
+    ? forwardedFor
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean)
+    : [];
+  if (request.ip && forwardedParts[forwardedParts.length - 1] !== request.ip) {
+    forwardedParts.push(request.ip);
+  }
+  if (forwardedParts.length > 0) {
+    headers.set('x-forwarded-for', forwardedParts.join(', '));
   }
 
   try {

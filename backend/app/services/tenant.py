@@ -250,6 +250,13 @@ async def _ensure_org_owner_id_points_to_active_owner(
     org.owner_id = replacement_id
 
 
+async def _lock_organization(db: AsyncSession, org_id: uuid.UUID) -> None:
+    """Serialize membership role/removal mutations per organization on PostgreSQL."""
+    bind = db.get_bind()
+    if bind.dialect.name == "postgresql":
+        await db.execute(select(Organization.id).where(Organization.id == org_id).with_for_update())
+
+
 async def update_member_role(
     db: AsyncSession,
     *,
@@ -259,6 +266,7 @@ async def update_member_role(
     payload: UpdateMemberRoleRequest,
 ) -> MemberResponse:
     """Update a member's RBAC role while protecting the last owner."""
+    await _lock_organization(db, org.id)
     stmt = (
         select(Membership, User)
         .join(User, User.id == Membership.user_id)
@@ -321,6 +329,7 @@ async def remove_member(
     target_user_id: uuid.UUID,
 ) -> None:
     """Remove a member from an organization while blocking sole-owner removal."""
+    await _lock_organization(db, org.id)
     stmt = select(Membership).where(
         Membership.org_id == org.id,
         Membership.user_id == target_user_id,
@@ -360,6 +369,7 @@ async def leave_organization(
     actor: User,
 ) -> None:
     """Allow a member to leave an organization (unless they are the sole owner)."""
+    await _lock_organization(db, org.id)
     if membership.role == OrgRole.OWNER:
         owner_count = await _count_org_owners(db, org.id)
         if owner_count <= 1:

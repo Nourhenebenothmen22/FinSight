@@ -560,6 +560,51 @@ class TestGoogleOAuthAndRateLimiting:
         ).status_code == 200
 
     @pytest.mark.asyncio
+    async def test_google_callback_forwards_access_token_for_at_hash_check(
+        self,
+        async_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "google-client-id-123")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "google-client-secret-456")
+        get_settings.cache_clear()
+
+        login_resp = await async_client.get(
+            "/api/v1/auth/google/login?next=/profile",
+            follow_redirects=False,
+        )
+        state = parse_qs(urlparse(login_resp.headers["location"]).query)["state"][0]
+
+        captured: dict[str, Any] = {}
+
+        async def fake_exchange(**kwargs: Any) -> dict[str, Any]:
+            _ = kwargs
+            return {
+                "id_token": "mock-id-token-with-at-hash",
+                "access_token": "ya29.forwarded-google-access-token",
+            }
+
+        async def fake_verify(**kwargs: Any) -> dict[str, Any]:
+            captured.update(kwargs)
+            return {
+                "sub": "google-sub-at-hash",
+                "email": "athash.user@example.com",
+                "email_verified": True,
+                "name": "AtHash User",
+            }
+
+        monkeypatch.setattr(auth_service, "exchange_google_authorization_code", fake_exchange)
+        monkeypatch.setattr(auth_service, "verify_google_id_token", fake_verify)
+
+        cb_resp = await async_client.get(
+            f"/api/v1/auth/google/callback?code=auth-code-athash&state={state}",
+            follow_redirects=False,
+        )
+        assert cb_resp.status_code == 302
+        assert "/auth/google/callback?code=" in cb_resp.headers["location"]
+        assert captured["access_token"] == "ya29.forwarded-google-access-token"
+
+    @pytest.mark.asyncio
     async def test_rate_limiter_enforces_429_and_retry_after(
         self,
         async_client: AsyncClient,

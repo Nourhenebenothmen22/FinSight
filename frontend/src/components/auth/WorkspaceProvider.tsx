@@ -77,32 +77,48 @@ export function WorkspaceProvider({ children, skipInitialLoad = false }: Workspa
     writeStoredOrgId(orgId);
   }, []);
 
-  const reloadWorkspaces = useCallback(async (): Promise<OrganizationSummary[]> => {
-    if (!isAuthenticated) {
-      setWorkspaces([]);
-      setActiveOrgId(null);
-      setError(null);
-      return [];
-    }
+  const syncWorkspaces = useCallback(
+    async (isCancelled?: () => boolean): Promise<OrganizationSummary[]> => {
+      if (!isAuthenticated) {
+        if (!isCancelled?.()) {
+          setWorkspaces([]);
+          setActiveOrgId(null);
+          setError(null);
+        }
+        return [];
+      }
 
-    setIsLoading(true);
-    setError(null);
-    try {
-      const list = await orgsApi.list();
-      setWorkspaces(list);
+      if (!isCancelled?.()) {
+        setIsLoading(true);
+        setError(null);
+      }
+      try {
+        const list = await orgsApi.list();
+        if (isCancelled?.()) {
+          return [];
+        }
+        setWorkspaces(list);
 
-      const candidate = activeOrgIdRef.current ?? readStoredOrgId();
-      const matched = candidate && list.some((org) => org.id === candidate);
-      const nextId = matched ? candidate : list[0]?.id ?? null;
-      setActiveOrgId(nextId);
-      return list;
-    } catch (err) {
-      setError(extractApiErrorMessage(err, 'Unable to load workspaces.'));
-      return [];
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAuthenticated, setActiveOrgId]);
+        const candidate = activeOrgIdRef.current ?? readStoredOrgId();
+        const matched = candidate && list.some((org) => org.id === candidate);
+        const nextId = matched ? candidate : list[0]?.id ?? null;
+        setActiveOrgId(nextId);
+        return list;
+      } catch (err) {
+        if (!isCancelled?.()) {
+          setError(extractApiErrorMessage(err, 'Unable to load workspaces.'));
+        }
+        return [];
+      } finally {
+        if (!isCancelled?.()) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [isAuthenticated, setActiveOrgId]
+  );
+
+  const reloadWorkspaces = useCallback(() => syncWorkspaces(), [syncWorkspaces]);
 
   useEffect(() => {
     configureTenantClient(() => activeOrgIdRef.current);
@@ -113,44 +129,12 @@ export function WorkspaceProvider({ children, skipInitialLoad = false }: Workspa
     if (skipInitialLoad || authLoading) {
       return;
     }
-    if (!isAuthenticated) {
-      setWorkspaces([]);
-      setActiveOrgId(null);
-      setError(null);
-      return;
-    }
-
     let active = true;
-    setIsLoading(true);
-    setError(null);
-    orgsApi
-      .list()
-      .then((list) => {
-        if (!active) {
-          return;
-        }
-        setWorkspaces(list);
-        const candidate = activeOrgIdRef.current ?? readStoredOrgId();
-        const matched = candidate && list.some((org) => org.id === candidate);
-        const nextId = matched ? candidate : list[0]?.id ?? null;
-        setActiveOrgId(nextId);
-      })
-      .catch((err) => {
-        if (!active) {
-          return;
-        }
-        setError(extractApiErrorMessage(err, 'Unable to load workspaces.'));
-      })
-      .finally(() => {
-        if (active) {
-          setIsLoading(false);
-        }
-      });
-
+    void syncWorkspaces(() => !active);
     return () => {
       active = false;
     };
-  }, [authLoading, isAuthenticated, setActiveOrgId, skipInitialLoad]);
+  }, [authLoading, skipInitialLoad, syncWorkspaces]);
 
   const activeWorkspace = useMemo(
     () => workspaces.find((org) => org.id === activeOrgId) ?? null,

@@ -511,4 +511,20 @@ class TestCrossTenantIsolationAndRBAC:
         )
         assert limited.status_code == 429
         assert int(limited.headers["Retry-After"]) > 0
+
+        # Organization creation is also actor-rate-limited per user
+        for idx in range(2):
+            created_org = await async_client.post(
+                "/api/v1/orgs",
+                json={"name": f"Burst Org {idx}"},
+                headers=headers,
+            )
+            assert created_org.status_code == 201
+        org_limited = await async_client.post(
+            "/api/v1/orgs",
+            json={"name": "Burst Org Blocked"},
+            headers=headers,
+        )
+        assert org_limited.status_code == 429
+        assert int(org_limited.headers["Retry-After"]) > 0
         _ = (User, Membership, OrgRole)
